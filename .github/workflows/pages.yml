@@ -1,4 +1,4 @@
-name: Deploy to GitHub Pages
+name: Deploy to GitHub Pages and Cloudflare Pages
 
 on:
   push:
@@ -32,6 +32,13 @@ jobs:
           npx vite preview --port 4173 --strictPort &
           for i in $(seq 1 30); do curl -sf http://localhost:4173/ >/dev/null && break; sleep 1; done
           npm run check:a11y
+      - name: Doctor link end-to-end check (local relay, separate build)
+        run: |
+          ALLOWED_ORIGINS=http://localhost:4174 node scripts/share-dev-server.mjs &
+          VITE_SHARE_API_URL=http://localhost:8787 VITE_SHARE_LINK_BASE=http://localhost:4174/ npx vite build --outDir dist-e2e --emptyOutDir
+          npx vite preview --outDir dist-e2e --port 4174 --strictPort &
+          for i in $(seq 1 30); do curl -sf http://localhost:4174/ >/dev/null && break; sleep 1; done
+          BASE_URL=http://localhost:4174/ npm run check:share
       - uses: actions/upload-pages-artifact@v5
         with:
           path: dist
@@ -44,3 +51,29 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@v5
+
+  # The doctor view at https://my-bp-weight-tracker.pages.dev (neutral address for
+  # doctor links). Runs only when the CLOUDFLARE_API_TOKEN repository secret exists
+  # (token permission: Account → Cloudflare Pages → Edit).
+  cloudflare:
+    needs: build
+    runs-on: ubuntu-latest
+    env:
+      HAS_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
+    steps:
+      - if: env.HAS_TOKEN != 'true'
+        run: echo "CLOUDFLARE_API_TOKEN not set; skipping the Cloudflare Pages deploy."
+      - if: env.HAS_TOKEN == 'true'
+        uses: actions/checkout@v7
+      - if: env.HAS_TOKEN == 'true'
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - if: env.HAS_TOKEN == 'true'
+        run: npm ci && npm run build
+      - if: env.HAS_TOKEN == 'true'
+        run: npx wrangler@4 pages deploy dist --project-name my-bp-weight-tracker --branch mamishega
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: b0484a794284b44b2563373c29de3619
