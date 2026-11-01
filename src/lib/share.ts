@@ -27,6 +27,17 @@ export function shareApiBase(): string {
   return v.trim().replace(/\/+$/, '');
 }
 
+/**
+ * Address used at the start of doctor links (VITE_SHARE_LINK_BASE), so links
+ * can use a neutral host instead of the one the patient's app runs on (e.g. a
+ * GitHub Pages address that contains an account name). Defaults to this app.
+ */
+export function shareLinkBase(): string {
+  const v = ((import.meta.env.VITE_SHARE_LINK_BASE as string | undefined) ?? '').trim();
+  if (v) return v.endsWith('/') ? v : `${v}/`;
+  return typeof location === 'undefined' ? '' : `${location.origin}${location.pathname}`;
+}
+
 export function shareAvailable(): boolean {
   return !!shareApiBase() && typeof crypto !== 'undefined' && !!crypto.subtle;
 }
@@ -201,7 +212,7 @@ export function isSharedHash(hash: string): boolean {
   return hash.startsWith('#/d/') || hash.startsWith('#/shared/');
 }
 
-export function buildShareLink(cfg: Pick<ShareConfig, 'id' | 'key' | 'linkName'>, base = `${location.origin}${location.pathname}`): string {
+export function buildShareLink(cfg: Pick<ShareConfig, 'id' | 'key' | 'linkName'>, base = shareLinkBase()): string {
   if (SECRET_RE.test(cfg.key)) {
     const name = slugifyName(cfg.linkName ?? '');
     return `${base}#/d/${name ? `${encodeURIComponent(name)}/` : ''}${cfg.key}`;

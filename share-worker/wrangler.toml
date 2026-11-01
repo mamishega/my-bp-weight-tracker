@@ -5,7 +5,7 @@ compatibility_date = "2026-10-01"
 
 [vars]
 # Origins allowed to create/update links (the app's own address). Comma-separated.
-ALLOWED_ORIGINS = "https://mamishega.github.io,http://localhost:5173,http://localhost:4173"
+ALLOWED_ORIGINS = "https://mamishega.github.io,https://my-bp-weight-tracker.pages.dev,http://localhost:5173,http://localhost:4173"
 
 [[kv_namespaces]]
 binding = "SHARES"

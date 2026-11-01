@@ -15,7 +15,8 @@
     "theme": "node scripts/gen-dark-theme.mjs",
     "share:dev": "node scripts/share-dev-server.mjs",
     "share:deploy": "npx wrangler@4 deploy --config share-worker/wrangler.toml",
-    "check:share": "node scripts/check-share-browser.mjs"
+    "check:share": "node scripts/check-share-browser.mjs",
+    "viewer:deploy": "npm run build && npx wrangler@4 pages deploy dist --project-name my-bp-weight-tracker --branch mamishega"
   },
   "dependencies": {
     "idb": "^8.0.4",

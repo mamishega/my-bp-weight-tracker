@@ -5,7 +5,7 @@ import { emptyData, normaliseSettings, normaliseShare } from '../lib/defaults';
 import {
   DEFAULT_SHARE_OPTIONS, _resetSyncForTests, buildShareLink, buildShareSnapshot, createShare, decryptSnapshot, deleteShare,
   encryptSnapshot, fetchShared, generateShareKey, generateShareSecret, getSyncStatus, parseShareHash, relativeTime, requestSync, resolveShareId, ShareHttpError,
-  shareIdFromSecret, slugifyName,
+  shareIdFromSecret, shareLinkBase, slugifyName,
 } from '../lib/share';
 import type { AppData, ShareOptions } from '../types';
 import { installFakeShareServer, TEST_API } from './fakeShareServer';
@@ -57,6 +57,17 @@ describe('share encryption', () => {
     // Non-Latin names are kept (percent-encoded in the link).
     const arabic = buildShareLink({ id, key: secret, linkName: slugifyName('محمد شريف') }, 'https://x.example/');
     expect(parseShareHash(new URL(arabic).hash)?.name).toBe('محمد-شريف');
+  });
+
+  it('can start doctor links with a neutral address instead of the app’s own', () => {
+    vi.stubEnv('VITE_SHARE_LINK_BASE', 'https://neutral.example');
+    try {
+      expect(shareLinkBase()).toBe('https://neutral.example/');
+      expect(buildShareLink({ id: 'x', key: 'Q'.repeat(16), linkName: 'sam' })).toBe(`https://neutral.example/#/d/sam/${'Q'.repeat(16)}`);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+    expect(shareLinkBase()).toBe(`${location.origin}${location.pathname}`);
   });
 
   it('turns names into tidy link labels', () => {

@@ -129,11 +129,16 @@ npm run share:deploy     # creates the KV namespace on first deploy and prints t
 
 If your Wrangler version doesn't create the KV namespace automatically, run `npx wrangler@4 kv namespace create SHARES`, paste the printed `id` into `share-worker/wrangler.toml`, and deploy again.
 
-Then point the app at it:
+Then point the app at it in **`.env.production`** (committed: these addresses aren't secret, and every build uses them, including GitHub Actions and Cloudflare Pages):
 
-- **GitHub Pages:** repository *Settings → Secrets and variables → Actions → Variables → New variable* `SHARE_API_URL` = the worker URL (or `gh variable set SHARE_API_URL --body https://…workers.dev`). Then re-run the *Deploy to GitHub Pages* workflow.
-- **Cloudflare Pages / other hosts:** set the build environment variable `VITE_SHARE_API_URL` to the worker URL, and add the site's origin (e.g. `https://my-bp.pages.dev`) to `ALLOWED_ORIGINS` in `share-worker/wrangler.toml`, then `npm run share:deploy` again.
-- **Local:** `npm run share:dev`, then `VITE_SHARE_API_URL=http://localhost:8787 npm run dev`.
+```
+VITE_SHARE_API_URL=https://bp-tracker-share.<your-subdomain>.workers.dev
+VITE_SHARE_LINK_BASE=https://my-bp-weight-tracker.pages.dev/
+```
+
+`VITE_SHARE_LINK_BASE` (optional) makes doctor links start with a neutral address instead of the one the patient's app runs on. A GitHub Pages address contains the GitHub account name. That address must serve this same app (the doctor's view runs there) and be listed in `ALLOWED_ORIGINS`. Your own app and records stay where they are, because browser storage belongs to one address. Here it's the Cloudflare Pages project `my-bp-weight-tracker`. Its Git builds need *Root directory* empty, build command `npm run build` and output directory `dist`. Alternatively, deploy it by hand with `npm run viewer:deploy`.
+
+For local testing, `npm run share:dev`, then `VITE_SHARE_API_URL=http://localhost:8787 npm run dev`.
 
 Without `VITE_SHARE_API_URL` the app behaves exactly as before: it makes no outside connections, and the share page explains that sharing isn't set up.
 
