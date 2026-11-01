@@ -15,11 +15,18 @@ const env = {
       if (!e || (e.expiration && e.expiration * 1000 <= Date.now())) return null;
       return type === 'json' ? JSON.parse(e.value) : e.value;
     },
+    async getWithMetadata(k, type) {
+      const e = store.get(k);
+      return { value: e ? (type === 'json' ? JSON.parse(e.value) : e.value) : null, metadata: e?.metadata ?? null };
+    },
     async put(k, value, opts = {}) {
-      store.set(k, { value, expiration: opts.expiration });
+      store.set(k, { value, expiration: opts.expiration ?? (opts.expirationTtl ? Math.floor(Date.now() / 1000) + opts.expirationTtl : undefined), metadata: opts.metadata });
     },
     async delete(k) {
       store.delete(k);
+    },
+    async list({ prefix = '' } = {}) {
+      return { keys: [...store.entries()].filter(([k]) => k.startsWith(prefix)).map(([name, e]) => ({ name, metadata: e.metadata ?? null })), list_complete: true };
     },
   },
 };

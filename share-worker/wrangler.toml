@@ -1,12 +1,29 @@
-# Cloudflare Worker that relays encrypted share links. See README → "Doctor share link".
+# Cloudflare Worker for doctor links, encrypted cloud backup and push reminders.
+# See README → "Doctor share link", "Cloud backup and sync" and "Reminders".
 name = "bp-tracker-share"
 main = "worker.js"
 compatibility_date = "2026-10-01"
 
 [vars]
-# Origins allowed to create/update links (the app's own address). Comma-separated.
+# Origins allowed to write (the app's own addresses). Comma-separated.
 ALLOWED_ORIGINS = "https://mamishega.github.io,https://my-bp-weight-tracker.pages.dev,http://localhost:5173,http://localhost:4173"
+# Push reminders. The PUBLIC key is not secret. The private key is a secret:
+#   npx wrangler@4 secret put VAPID_PRIVATE_KEY --config share-worker/wrangler.toml
+VAPID_PUBLIC_KEY = "BDXlsxAoZ5sGHIUFU1Pd1VY6roiF8D5lS7NF_ewEQIvISnRSrHFTvn4VQHTF-Vtd7tYAzbGouaTQyq1zaR5eg64"
+VAPID_SUBJECT = "https://my-bp-weight-tracker.pages.dev"
 
 [[kv_namespaces]]
 binding = "SHARES"
 id = "514075b3ec6644d0ba9db8db01071da1"
+
+# Abuse protection: at most 120 requests a minute from one address.
+[[ratelimits]]
+name = "RATE_LIMITER"
+namespace_id = "1001"
+  [ratelimits.simple]
+  limit = 120
+  period = 60
+
+# Push reminders are checked every 5 minutes.
+[triggers]
+crons = ["*/5 * * * *"]

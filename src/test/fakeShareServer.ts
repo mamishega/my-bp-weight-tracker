@@ -5,20 +5,27 @@
 import { handle } from '../../share-worker/worker.js';
 
 export class FakeKV {
-  map = new Map<string, { value: string; expiration?: number }>();
+  map = new Map<string, { value: string; expiration?: number; metadata?: unknown }>();
   async get(k: string, type?: 'json') {
     const e = this.map.get(k);
     if (!e) return null;
     return type === 'json' ? JSON.parse(e.value) : e.value;
   }
-  async put(k: string, value: string, opts?: { expiration?: number }) {
-    this.map.set(k, { value, expiration: opts?.expiration });
+  async getWithMetadata(k: string, type?: 'json') {
+    const e = this.map.get(k);
+    return { value: e ? (type === 'json' ? JSON.parse(e.value) : e.value) : null, metadata: e?.metadata ?? null };
+  }
+  async put(k: string, value: string, opts?: { expiration?: number; expirationTtl?: number; metadata?: unknown }) {
+    this.map.set(k, { value, expiration: opts?.expiration, metadata: opts?.metadata });
   }
   async delete(k: string) {
     this.map.delete(k);
   }
+  async list({ prefix = '' }: { prefix?: string; cursor?: string } = {}) {
+    const keys = [...this.map.entries()].filter(([k]) => k.startsWith(prefix)).map(([name, e]) => ({ name, metadata: e.metadata ?? null }));
+    return { keys, list_complete: true, cursor: undefined };
+  }
 }
-
 
 export const TEST_ORIGIN = 'https://app.example';
 export const TEST_API = 'https://share.example';
