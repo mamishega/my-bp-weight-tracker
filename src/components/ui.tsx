@@ -346,3 +346,35 @@ export const tableCls = {
   tr: 'border-t border-slate-100 hover:bg-slate-50/60',
   td: 'px-3 py-2.5 align-top',
 };
+
+/**
+ * Number input that keeps exactly what the user types and only reports a value
+ * once it is valid, so partially-typed numbers ("", "8", "85.") are never
+ * snapped back or reformatted mid-typing.
+ */
+export function NumberField({ value, onValid, isValid, invalidMessage, format = (n) => String(n), ...p }: FieldShell & Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange'> & { value: number | null; onValid: (n: number | null) => void; isValid: (n: number | null) => boolean; invalidMessage: string; format?: (n: number) => string }) {
+  const [text, setText] = useState(value == null ? '' : format(value));
+  const [focused, setFocused] = useState(false);
+  useEffect(() => {
+    if (!focused) setText(value == null ? '' : format(value));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value, focused]);
+  const parsed = text.trim() === '' ? null : Number(text);
+  const valid = (parsed === null || Number.isFinite(parsed)) && isValid(parsed);
+  return (
+    <TextField
+      {...p}
+      inputMode="decimal"
+      value={text}
+      error={!valid && !focused ? invalidMessage : p.error}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onChange={(e) => {
+        setText(e.target.value);
+        const t = e.target.value.trim();
+        const n = t === '' ? null : Number(t);
+        if ((n === null || Number.isFinite(n)) && isValid(n)) onValid(n);
+      }}
+    />
+  );
+}

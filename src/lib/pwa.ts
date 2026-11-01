@@ -5,6 +5,7 @@ type Listener = (waiting: ServiceWorker | null) => void;
 let waiting: ServiceWorker | null = null;
 const listeners = new Set<Listener>();
 let registration: ServiceWorkerRegistration | null = null;
+let updateRequested = false;
 
 function setWaiting(w: ServiceWorker | null) {
   waiting = w;
@@ -33,9 +34,12 @@ export async function registerServiceWorker(): Promise<void> {
         if (sw.state === 'installed' && navigator.serviceWorker.controller) setWaiting(sw);
       });
     });
+    // Reload only when the user chose "Update now". On a first visit the new
+    // worker also takes control (clients.claim), which must NOT reload the page
+    // and discard anything being typed.
     let reloading = false;
     navigator.serviceWorker.addEventListener('controllerchange', () => {
-      if (reloading) return;
+      if (reloading || !updateRequested) return;
       reloading = true;
       window.location.reload();
     });
@@ -50,7 +54,9 @@ export async function registerServiceWorker(): Promise<void> {
 }
 
 export function applyUpdate() {
-  waiting?.postMessage({ type: 'SKIP_WAITING' });
+  if (!waiting) return;
+  updateRequested = true;
+  waiting.postMessage({ type: 'SKIP_WAITING' });
 }
 
 export async function showSystemNotification(title: string, body: string, tag: string): Promise<boolean> {

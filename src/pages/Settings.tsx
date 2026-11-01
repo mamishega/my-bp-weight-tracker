@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useStore } from '../store/Store';
 import type { Arm, Monitor, Settings, WeightUnit } from '../types';
-import { Badge, Button, Card, Checkbox, Modal, Notice, PageTitle, RadioGroup, SelectField, TextArea, TextField, TypedConfirm, useToast } from '../components/ui';
+import { NumberField, Badge, Button, Card, Checkbox, Modal, Notice, PageTitle, RadioGroup, SelectField, TextArea, TextField, TypedConfirm, useToast } from '../components/ui';
 import { BackupNowButton, LastBackup } from '../components/Backup';
 import { PrivacySummary, SafetyStatement, UrgentHelp } from '../components/safety';
 import { applyMerge, applyReplace, planImport, validateBackup, type BackupFile, type ImportPlan, type MergeOptions } from '../lib/backup';
@@ -53,6 +53,13 @@ function TargetsCard() {
       <Notice tone="info">Home readings are commonly taken before medication. If your clinician has asked for additional after-medication readings, follow their schedule — the app doesn’t recommend one.</Notice>
     </Card>
   );
+}
+
+/** Re-mount the targets form whenever saved targets change (e.g. after a restore),
+ * so stale form values can never overwrite restored data. */
+function TargetsCardKeyed() {
+  const { data } = useStore();
+  return <TargetsCard key={JSON.stringify(data.settings.targets)} />;
 }
 
 function MonitorsCard() {
@@ -149,11 +156,11 @@ function RemindersCard() {
         <Checkbox label="Medication refill and prescription renewal" checked={r.refill.enabled} onChange={(v) => set({ refill: { enabled: v } })} />
         <div className="grid items-end gap-3 sm:grid-cols-[1fr_10rem]">
           <Checkbox label="Backup reminder" checked={r.backup.enabled} onChange={(v) => set({ backup: { ...r.backup, enabled: v } })} />
-          <TextField label="Every (days)" inputMode="numeric" value={String(r.backup.everyDays)} onChange={(e) => { const n = Number(e.target.value); if (Number.isInteger(n) && n > 0) set({ backup: { ...r.backup, everyDays: n } }); }} />
+          <NumberField label="Every (days)" value={r.backup.everyDays} isValid={(n) => n != null && Number.isInteger(n) && n > 0} invalidMessage="Enter a whole number of days (1 or more)." onValid={(n) => set({ backup: { ...r.backup, everyDays: n! } })} />
         </div>
         <div className="grid items-end gap-3 sm:grid-cols-[1fr_10rem]">
           <Checkbox label="Appointment reminder" checked={r.appointment.enabled} onChange={(v) => set({ appointment: { ...r.appointment, enabled: v } })} />
-          <TextField label="Days before" inputMode="numeric" value={String(r.appointment.daysBefore)} onChange={(e) => { const n = Number(e.target.value); if (Number.isInteger(n) && n >= 0) set({ appointment: { ...r.appointment, daysBefore: n } }); }} />
+          <NumberField label="Days before" value={r.appointment.daysBefore} isValid={(n) => n != null && Number.isInteger(n) && n >= 0} invalidMessage="Enter a whole number of days (0 or more)." onValid={(n) => set({ appointment: { ...r.appointment, daysBefore: n! } })} />
         </div>
         <SelectField label="Snooze length" value={String(r.snoozeMinutes)} onChange={(e) => set({ snoozeMinutes: Number(e.target.value) })}>
           {[5, 10, 15, 30, 60].map((m) => <option key={m} value={m}>{m} minutes</option>)}
@@ -307,7 +314,7 @@ export function SettingsPage() {
       </Card>
       <RestoreCard />
       <GeneralCard />
-      <TargetsCard />
+      <TargetsCardKeyed />
       <MonitorsCard />
       <RemindersCard />
       <StorageCard />

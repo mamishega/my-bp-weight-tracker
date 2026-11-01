@@ -50,6 +50,7 @@ function RangePicker({ from, to, onChange }: { from: ISODate; to: ISODate; onCha
   const today = todayIn(data.settings.timeZone);
   const [cf, setCf] = useState(from);
   const [ct, setCt] = useState(to);
+  const [rangeErr, setRangeErr] = useState<string | null>(null);
   const n = daysBetween(from, to) + 1;
   const preset = to === today && [7, 30, 90].includes(n) ? n : null;
   return (
@@ -59,7 +60,13 @@ function RangePicker({ from, to, onChange }: { from: ISODate; to: ISODate; onCha
       ))}
       <div className="w-40"><TextField label="From" type="date" value={cf} onChange={(e) => setCf(e.target.value)} /></div>
       <div className="w-40"><TextField label="To" type="date" value={ct} onChange={(e) => setCt(e.target.value)} /></div>
-      <Button variant={preset ? 'secondary' : 'primary'} onClick={() => isValidDate(cf) && isValidDate(ct) && cf <= ct && onChange(cf, ct)}>Apply custom range</Button>
+      <Button variant={preset ? 'secondary' : 'primary'} onClick={() => {
+        if (!isValidDate(cf) || !isValidDate(ct)) return setRangeErr('Enter both dates.');
+        if (cf > ct) return setRangeErr('The “From” date must be on or before the “To” date.');
+        setRangeErr(null);
+        onChange(cf, ct);
+      }}>Apply custom range</Button>
+      {rangeErr && <p role="alert" className="w-full text-sm font-medium text-red-700">{rangeErr}</p>}
     </div>
   );
 }

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useStore } from '../store/Store';
 import { useDirtyForm } from '../store/dirty';
 import type { Milestone, WeightEntry, WeightUnit } from '../types';
-import { Badge, Button, Card, Empty, Modal, Notice, Optional, PageTitle, SelectField, Stat, TextArea, TextField, useToast } from '../components/ui';
+import { NumberField, Badge, Button, Card, Empty, Modal, Notice, Optional, PageTitle, SelectField, Stat, TextArea, TextField, useToast } from '../components/ui';
 import { WeightChart } from '../components/Charts';
 import { addDays, formatDateShort, formatTime, instantToZoned, isValidDate, isValidTime, todayIn, zonedToInstant } from '../lib/time';
 import { describeChange, fmtWeight, fromKg, movingAverage7, toKg, weightProgress } from '../lib/weight';
@@ -113,7 +113,7 @@ function GoalForm({ onClose }: { onClose: () => void }) {
           {ms.map((m, i) => (
             <div key={m.id} className="grid grid-cols-[1fr_7rem_auto] items-end gap-2">
               <TextField label={`Milestone ${i + 1}`} value={m.label} onChange={(e) => setMs(ms.map((x) => (x.id === m.id ? { ...x, label: e.target.value } : x)))} />
-              <TextField label={`At (${unit})`} inputMode="decimal" optional value={m.kg == null ? '' : fromKg(m.kg, unit).toFixed(1)} onChange={(e) => setMs(ms.map((x) => (x.id === m.id ? { ...x, kg: e.target.value.trim() === '' || !Number.isFinite(Number(e.target.value)) ? null : toKg(Number(e.target.value), unit) } : x)))} />
+              <NumberField label={`At (${unit})`} optional value={m.kg == null ? null : Math.round(fromKg(m.kg, unit) * 10) / 10} isValid={(n) => n == null || n > 0} invalidMessage="Enter a weight greater than zero, or leave blank." onValid={(n) => setMs((cur) => cur.map((x) => (x.id === m.id ? { ...x, kg: n == null ? null : toKg(n, unit) } : x)))} />
               <Button variant="ghost" onClick={() => setMs(ms.filter((x) => x.id !== m.id))} aria-label={`Remove milestone ${i + 1}`}>Remove</Button>
             </div>
           ))}

@@ -23,8 +23,10 @@ export function openStore(mode: DataMode): Promise<IDBPDatabase> {
         }
         if (!db.objectStoreNames.contains('kv')) db.createObjectStore('kv', { keyPath: 'id' });
       },
-      blocking() {
-        // Another tab wants to upgrade; close so it can proceed.
+      blocking(_current, _blocked, event) {
+        // Another tab (a newer app version) wants to upgrade: close our
+        // connection so its upgrade can proceed instead of being blocked.
+        (event.target as IDBDatabase).close();
         cache.delete(mode);
       },
     });

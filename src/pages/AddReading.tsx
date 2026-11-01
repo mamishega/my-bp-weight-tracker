@@ -138,8 +138,9 @@ function ReadingForm({ existing, initialType }: { existing?: BPSession; initialT
     await put('sessions', rec);
     if (saveDefaults) await saveSettings({ ...settings, defaultArm: (arm || null) as Arm | null, defaultMonitorId: monitorId || null });
     setDirty(false);
+    const leave = () => (existing && window.history.length > 1 ? window.history.back() : navigate('/'));
     toast(`${SESSION_LABEL[rec.sessionType]} saved: ${fmtBP(sessionAverage(rec).systolic, sessionAverage(rec).diastolic)} mmHg${rec.readings.length === 1 ? ' (single reading)' : ' (average of 2)'}.`);
-    navigate('/');
+    leave();
   };
 
   const del = async () => {
@@ -296,7 +297,7 @@ function ReadingForm({ existing, initialType }: { existing?: BPSession; initialT
 
         <div className="sticky bottom-16 z-10 flex flex-wrap gap-2 rounded-xl border border-slate-200 bg-white/95 p-3 shadow md:bottom-2">
           <Button type="submit" variant="primary" className="flex-1 sm:flex-none">{existing ? 'Save changes' : 'Save reading'}</Button>
-          <Button onClick={() => history.back()}>Cancel</Button>
+          <Button onClick={() => (window.history.length > 1 ? window.history.back() : navigate('/'))}>Cancel</Button>
           {existing && <Button variant="danger" onClick={() => setConfirmDelete(true)}>Delete</Button>}
         </div>
       </form>

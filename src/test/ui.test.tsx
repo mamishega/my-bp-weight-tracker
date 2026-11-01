@@ -81,3 +81,36 @@ describe('accessible forms and navigation', () => {
     expect(urgent.compareDocumentPosition(field) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });
+
+describe('regressions found in review', () => {
+  it('number settings can be cleared and retyped', async () => {
+    const user = userEvent.setup();
+    renderApp('#/settings');
+    const f = await screen.findByLabelText('Every (days)');
+    await user.clear(f);
+    await user.type(f, '14');
+    expect(f).toHaveValue('14');
+    await waitFor(async () => expect((await loadAll('real')).settings.reminders.backup.everyDays).toBe(14));
+  });
+
+  it('weight milestone accepts decimals while typing', async () => {
+    const user = userEvent.setup();
+    renderApp('#/weight');
+    await user.click(await screen.findByRole('button', { name: /Set goal/ }));
+    await user.click(screen.getByRole('button', { name: 'Add milestone' }));
+    const f = screen.getByLabelText(/^At \(kg\)/);
+    await user.type(f, '85.5');
+    expect(f).toHaveValue('85.5');
+  });
+
+  it('invalid custom date range shows an error instead of doing nothing', async () => {
+    const user = userEvent.setup();
+    renderApp('#/trends');
+    const from = await screen.findByLabelText('From');
+    const to = screen.getByLabelText('To');
+    await user.clear(from); await user.type(from, '2026-11-10');
+    await user.clear(to); await user.type(to, '2026-11-01');
+    await user.click(screen.getByRole('button', { name: 'Apply custom range' }));
+    expect(await screen.findByText(/must be on or before/)).toBeInTheDocument();
+  });
+});
