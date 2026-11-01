@@ -13,7 +13,7 @@
     background: var(--app-bg);
   }
   h1, h2, h3 { text-wrap: balance; }
-  a { color: #115e59; text-underline-offset: 3px; text-decoration-thickness: 1px; }
+  a { color: var(--color-teal-800); text-underline-offset: 3px; text-decoration-thickness: 1px; }
   ::selection { background: #ccfbf1; }
   :focus-visible { outline: 3px solid #0f766e; outline-offset: 2px; border-radius: 4px; }
   input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid #0f766e; outline-offset: 1px; }
