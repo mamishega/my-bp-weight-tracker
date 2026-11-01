@@ -57,6 +57,31 @@ describe('share relay worker', () => {
     expect((await handle(req('GET', `${BASE}/${c.id}`), env, now)).status).toBe(404);
   });
 
+  it('accepts an app-chosen id once, and refuses to reuse it', async () => {
+    const id = 'Z'.repeat(22);
+    const first = await handle(req('POST', BASE, { ...blob, id }), env);
+    expect(first.status).toBe(201);
+    expect((await first.json()).id).toBe(id);
+    expect((await handle(req('POST', BASE, { ...blob, id }), env)).status).toBe(409);
+    expect((await handle(req('POST', BASE, { ...blob, id: 'bad id' }), env)).status).toBe(400);
+  });
+
+  it('lets only the last device update a link unless it takes over', async () => {
+    const res = await handle(req('POST', BASE, { ...blob, writer: 'device-aaaa' }), env);
+    const c = await res.json();
+    const put = (writer: string, extra = {}) => handle(req('PUT', `${BASE}/${c.id}`, { ...blob, writer, ...extra }, { Authorization: `Bearer ${c.token}` }), env);
+    expect((await put('device-aaaa')).status).toBe(200);
+    const refused = await put('device-bbbb');
+    expect(refused.status).toBe(409);
+    expect((await refused.json()).code).toBe('other-device');
+    expect((await put('device-bbbb', { takeover: true })).status).toBe(200);
+    expect((await put('device-aaaa')).status).toBe(409);
+    // Older app versions that don't send a device id are still accepted.
+    expect((await handle(req('PUT', `${BASE}/${c.id}`, blob, { Authorization: `Bearer ${c.token}` }), env)).status).toBe(200);
+    // A device id never lets someone without the token in.
+    expect((await handle(req('PUT', `${BASE}/${c.id}`, { ...blob, writer: 'device-bbbb', takeover: true }, { Authorization: 'Bearer wrongwrongwrongwrongwrong' }), env)).status).toBe(403);
+  });
+
   it('treats expired links as gone even before KV removes them', async () => {
     const now = 1_800_000_000_000;
     const c = await create({ expiresInDays: 7 }, now);

@@ -305,8 +305,10 @@ export interface ShareConfig {
   id: string;
   /** Secret that lets this device update or delete the link. */
   token: string;
-  /** Encryption key; also in the link's #fragment. */
+  /** Link secret (16 chars; key and id are derived from it) or, for older links, the 43-char key. Only in the link's #fragment. */
   key: string;
+  /** Name label shown in the link, e.g. "sam-citizen" (cosmetic). */
+  linkName: string;
   createdAt: ISOInstant;
   expiresAt: ISOInstant;
   options: ShareOptions;

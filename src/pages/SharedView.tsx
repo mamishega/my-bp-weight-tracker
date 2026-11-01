@@ -7,7 +7,7 @@ import { Button, Notice } from '../components/ui';
 import { Logo } from '../components/Icon';
 import { BPChart, WeightChart } from '../components/Charts';
 import { ReportBody } from './Report';
-import { ShareDecryptError, ShareHttpError, fetchShared, relativeTime, shareApiBase, type ShareSnapshot } from '../lib/share';
+import { ShareDecryptError, ShareHttpError, fetchShared, relativeTime, resolveShareId, shareApiBase, type ParsedShareLink, type ShareSnapshot } from '../lib/share';
 import { addDays } from '../lib/time';
 
 const REFRESH_MS = 60_000;
@@ -18,7 +18,7 @@ type State =
   | { kind: 'error'; title: string; detail: string; retry: boolean }
   | { kind: 'ready'; snapshot: ShareSnapshot; updatedAt: number; expiresAt: number; fetchedAt: number; refreshError: boolean };
 
-export function SharedView({ id, shareKey }: { id: string; shareKey: string }) {
+export function SharedView({ link }: { link: ParsedShareLink }) {
   const [state, setState] = useState<State>({ kind: 'loading' });
   const [days, setDays] = useState<number | null>(null);
   const [now, setNow] = useState(Date.now());
@@ -29,7 +29,8 @@ export function SharedView({ id, shareKey }: { id: string; shareKey: string }) {
     busy.current = true;
     try {
       if (!shareApiBase()) throw new ShareHttpError(0, 'not configured');
-      const r = await fetchShared(id, shareKey);
+      const id = await resolveShareId(link);
+      const r = await fetchShared(id, link.key);
       setState({ kind: 'ready', ...r, fetchedAt: Date.now(), refreshError: false });
     } catch (e) {
       setState((prev) => {
@@ -43,7 +44,7 @@ export function SharedView({ id, shareKey }: { id: string; shareKey: string }) {
     } finally {
       busy.current = false;
     }
-  }, [id, shareKey]);
+  }, [link]);
 
   useEffect(() => {
     void load();
@@ -131,8 +132,8 @@ function Ready({ state, days, setDays, now, onRefresh }: { state: Extract<State,
           preparedNote={<>Live shared link, last updated {updated.toLocaleString('en-AU', { dateStyle: 'medium', timeStyle: 'short' })}</>}
           charts={
             <section aria-label="Charts" className="mt-6 flex flex-col gap-6 break-inside-avoid">
-              <BPChart sessions={d.sessions.filter((s) => s.date >= from && s.date <= to)} measure="systolic" from={from} to={to} target={d.settings.targets.systolic} visible={ALL} />
-              <BPChart sessions={d.sessions.filter((s) => s.date >= from && s.date <= to)} measure="diastolic" from={from} to={to} target={d.settings.targets.diastolic} visible={ALL} />
+              <BPChart sessions={d.sessions.filter((s) => s.date >= from && s.date <= to)} measure="systolic" from={from} to={to} target={d.settings.targets.systolic} visible={ALL} targetLabel="Patient’s target" />
+              <BPChart sessions={d.sessions.filter((s) => s.date >= from && s.date <= to)} measure="diastolic" from={from} to={to} target={d.settings.targets.diastolic} visible={ALL} targetLabel="Patient’s target" />
               <WeightChart weights={d.weights} from={from} to={to} unit={d.settings.weightUnit} goalKg={d.settings.weightGoal.goalKg} />
             </section>
           }

@@ -3,7 +3,7 @@ import { useStore } from '../store/Store';
 import type { ShareConfig, ShareOptions } from '../types';
 import { Badge, Button, Card, Checkbox, Modal, Notice, PageTitle, SelectField, TextField, useToast } from '../components/ui';
 import { Icon } from '../components/Icon';
-import { DEFAULT_SHARE_OPTIONS, SHARE_EXPIRY_DAYS, SHARE_WINDOWS, buildShareLink, createShare, deleteShare, getSyncStatus, relativeTime, requestSync, shareAvailable, subscribeSync, type SyncStatus } from '../lib/share';
+import { DEFAULT_SHARE_OPTIONS, SHARE_EXPIRY_DAYS, SHARE_WINDOWS, buildShareLink, createShare, deleteShare, getSyncStatus, relativeTime, requestSync, SECRET_RE, slugifyName, shareAvailable, subscribeSync, type SyncStatus } from '../lib/share';
 
 function useNow(everyMs = 30_000) {
   const [now, setNow] = useState(Date.now());
@@ -41,11 +41,32 @@ function OptionsForm({ value, onChange }: { value: ShareOptions; onChange: (o: S
   );
 }
 
+function LinkNameField({ value, onChange, hint }: { value: string; onChange: (v: string) => void; hint?: string }) {
+  const slug = slugifyName(value);
+  return (
+    <div>
+      <TextField
+        label="Name in the link"
+        optional
+        hint={hint ?? 'Helps your doctor recognise the link. Anyone who sees the link (for example in a chat preview) sees this name.'}
+        value={value}
+        maxLength={60}
+        autoComplete="off"
+        onChange={(e) => onChange(e.target.value)}
+      />
+      <p className="mt-1 break-all font-mono text-xs text-slate-600">
+        <span className="sr-only">Link preview: </span>…/#/d/{slug ? <strong className="text-slate-800">{slug}/</strong> : null}XXXXXXXXXXXXXXXX
+      </p>
+    </div>
+  );
+}
+
 function StatusLine({ s, now }: { s: SyncStatus; now: number }) {
   if (s.state === 'uploading') return <Badge tone="info" icon="refresh">Updating link…</Badge>;
   if (s.state === 'offline') return <Badge tone="warn" icon="wifiOff">{s.message ?? 'Waiting for a connection'}</Badge>;
   if (s.state === 'error') return <Badge tone="danger" icon="alert">Last update failed: {s.message}</Badge>;
   if (s.state === 'gone') return <Badge tone="danger" icon="xCircle">{s.message}</Badge>;
+  if (s.state === 'other-device') return <Badge tone="warn" icon="smartphone">Updated from another device</Badge>;
   if (s.lastUploadedAt) return <Badge tone="ok" icon="checkCircle">Link up to date · updated {relativeTime(s.lastUploadedAt, now)}</Badge>;
   return <Badge tone="neutral" icon="clock">Not uploaded yet</Badge>;
 }
@@ -58,7 +79,9 @@ function ActiveShare({ cfg }: { cfg: ShareConfig }) {
   const [opts, setOpts] = useState(cfg.options);
   const [confirm, setConfirm] = useState<null | 'stop' | 'renew'>(null);
   const [busy, setBusy] = useState(false);
-  const link = buildShareLink(cfg.id, cfg.key);
+  const [nameDraft, setNameDraft] = useState(cfg.linkName);
+  const link = buildShareLink(cfg);
+  const legacy = !SECRET_RE.test(cfg.key);
   const expires = new Date(cfg.expiresAt);
   const expired = expires.getTime() <= now;
   const changed = JSON.stringify(opts) !== JSON.stringify(cfg.options);
@@ -78,6 +101,11 @@ function ActiveShare({ cfg }: { cfg: ShareConfig }) {
       /* cancelled */
     }
   };
+  const saveName = async () => {
+    await saveSettings({ ...data.settings, share: { ...cfg, linkName: slugifyName(nameDraft) } });
+    setNameDraft(slugifyName(nameDraft));
+    toast('Link updated. Links you already sent still work: the name is only a label.');
+  };
   const saveOpts = async () => {
     await saveSettings({ ...data.settings, share: { ...cfg, options: opts } });
     toast('Saved. The link will update in a few seconds.');
@@ -88,7 +116,7 @@ function ActiveShare({ cfg }: { cfg: ShareConfig }) {
       await deleteShare(cfg);
       if (thenRenew) {
         const span = Math.round((Date.parse(cfg.expiresAt) - Date.parse(cfg.createdAt)) / 86_400_000);
-        const next = await createShare(data, cfg.options, SHARE_EXPIRY_DAYS.find((d) => d >= span) ?? 90);
+        const next = await createShare(data, cfg.options, SHARE_EXPIRY_DAYS.find((d) => d >= span) ?? 90, cfg.linkName || cfg.options.displayName);
         await saveSettings({ ...data.settings, share: next });
         toast('New link created. The old link no longer works.');
       } else {
@@ -118,8 +146,22 @@ function ActiveShare({ cfg }: { cfg: ShareConfig }) {
           </div>
           <div className="flex flex-wrap items-center gap-2" aria-live="polite">
             <StatusLine s={status} now={now} />
-            <Button icon="refresh" disabled={status.state === 'uploading' || expired} onClick={() => void requestSync(data, { force: true })}>Update now</Button>
+            {status.state !== 'other-device' && <Button icon="refresh" disabled={status.state === 'uploading' || expired} onClick={() => void requestSync(data, { force: true })}>Update now</Button>}
           </div>
+          {status.state === 'other-device' && (
+            <Notice tone="warn" title="Another device is updating this link">
+              <p>This usually happens after restoring a backup on a second phone or computer. Only one device updates the link, so newer records are never replaced by older ones.</p>
+              <p className="mt-2">If this device has your latest records, update the link from here instead. The other device will then stop updating it.</p>
+              <div className="mt-3"><Button icon="smartphone" onClick={() => void requestSync(data, { force: true, takeover: true })}>Update from this device instead</Button></div>
+            </Notice>
+          )}
+          {legacy && <Notice tone="info" title="This link uses the older, longer format">Choose <strong>Replace with a new link</strong> below to get a short link with a name in it. You’ll need to send the new link to your doctor.</Notice>}
+          {!legacy && (
+            <div className="flex flex-wrap items-end gap-2">
+              <div className="min-w-60 flex-1"><LinkNameField value={nameDraft} onChange={setNameDraft} hint="Only a label. Changing it doesn’t break links you’ve already sent." /></div>
+              <Button disabled={slugifyName(nameDraft) === cfg.linkName} onClick={saveName}>Save name</Button>
+            </div>
+          )}
           {expired ? (
             <Notice tone="warn" title="This link has expired">Create a new link to keep sharing.</Notice>
           ) : (
@@ -159,13 +201,14 @@ function CreateShare() {
   const toast = useToast();
   const [opts, setOpts] = useState<ShareOptions>(DEFAULT_SHARE_OPTIONS);
   const [days, setDays] = useState(90);
+  const [linkName, setLinkName] = useState<string | null>(null); // null = follow the display name
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const create = async () => {
     setBusy(true);
     setError(null);
     try {
-      const cfg = await createShare(data, opts, days);
+      const cfg = await createShare(data, opts, days, linkName ?? opts.displayName);
       await saveSettings({ ...data.settings, share: cfg });
       toast('Live link created. Copy it and send it to your doctor.');
     } catch (e) {
@@ -177,6 +220,9 @@ function CreateShare() {
   return (
     <Card title="Create a live link" subtitle="Your doctor opens it in any web browser. No app or account needed." icon="link">
       <OptionsForm value={opts} onChange={setOpts} />
+      <div className="mt-4 max-w-md">
+        <LinkNameField value={linkName ?? slugifyName(opts.displayName)} onChange={setLinkName} />
+      </div>
       <div className="mt-4 max-w-xs">
         <SelectField label="Link stops working after" value={String(days)} onChange={(e) => setDays(Number(e.target.value))}>
           {SHARE_EXPIRY_DAYS.map((d) => <option key={d} value={d}>{d} days</option>)}

@@ -5,7 +5,11 @@
 // (never sent to any server), so this worker cannot read the health data.
 //
 //   POST   /v1/shares          create  -> { id, token, updatedAt, expiresAt }
-//   PUT    /v1/shares/:id      update  (Authorization: Bearer <token>)
+//                              (the app may choose the id: it is derived from
+//                              the link's secret so links can be short)
+//   PUT    /v1/shares/:id      update  (Authorization: Bearer <token>). Only the
+//                              device that last updated the link may update it
+//                              (409), unless it sends takeover: true.
 //   GET    /v1/shares/:id      read    -> { v, iv, ct, updatedAt, expiresAt }
 //   DELETE /v1/shares/:id      stop sharing (Authorization: Bearer <token>)
 //
@@ -15,6 +19,7 @@ export const MAX_BODY_BYTES = 2_000_000;
 export const ALLOWED_DAYS = [7, 30, 90, 180, 365];
 const ID_RE = /^[A-Za-z0-9_-]{22}$/;
 const B64_RE = /^[A-Za-z0-9+/]+={0,2}$/;
+const WRITER_RE = /^[A-Za-z0-9_-]{8,40}$/;
 
 function b64url(bytes) {
   let s = '';
@@ -57,6 +62,8 @@ async function readBody(request) {
   }
   if (!body || body.v !== 1 || typeof body.iv !== 'string' || typeof body.ct !== 'string') return { error: 400 };
   if (!B64_RE.test(body.iv) || body.iv.length > 32 || !B64_RE.test(body.ct)) return { error: 400 };
+  if (body.writer !== undefined && (typeof body.writer !== 'string' || !WRITER_RE.test(body.writer))) return { error: 400 };
+  if (body.id !== undefined && (typeof body.id !== 'string' || !ID_RE.test(body.id))) return { error: 400 };
   return { body };
 }
 
@@ -102,9 +109,10 @@ export async function handle(request, env, now = Date.now()) {
     const { body, error } = await readBody(request);
     if (error) return json(error, { error: error === 413 ? 'Too large' : 'Bad request' });
     const days = ALLOWED_DAYS.includes(body.expiresInDays) ? body.expiresInDays : 90;
-    const newId = randomToken(16);
+    const newId = body.id ?? randomToken(16);
+    if (body.id !== undefined && (await env.SHARES.get(`share:${newId}`))) return json(409, { error: 'This link id is already in use.' });
     const token = randomToken(32);
-    const rec = { iv: body.iv, ct: body.ct, updatedAt: now, expiresAt: now + days * 86_400_000, tokenHash: await sha256Hex(token) };
+    const rec = { iv: body.iv, ct: body.ct, updatedAt: now, expiresAt: now + days * 86_400_000, tokenHash: await sha256Hex(token), writer: body.writer ?? null };
     await env.SHARES.put(`share:${newId}`, JSON.stringify(rec), { expiration: Math.floor(rec.expiresAt / 1000) });
     return json(201, { id: newId, token, updatedAt: rec.updatedAt, expiresAt: rec.expiresAt });
   }
@@ -129,7 +137,12 @@ export async function handle(request, env, now = Date.now()) {
     }
     const { body, error } = await readBody(request);
     if (error) return json(error, { error: error === 413 ? 'Too large' : 'Bad request' });
-    const next = { ...rec, iv: body.iv, ct: body.ct, updatedAt: now };
+    // One device at a time: a second device holding the same link (e.g. after
+    // restoring a backup) must not overwrite newer data with older data.
+    if (rec.writer && body.writer && body.writer !== rec.writer && body.takeover !== true) {
+      return json(409, { error: 'Another device is updating this link.', code: 'other-device' });
+    }
+    const next = { ...rec, iv: body.iv, ct: body.ct, updatedAt: now, writer: body.writer ?? rec.writer ?? null };
     await env.SHARES.put(`share:${id}`, JSON.stringify(next), { expiration: Math.floor(rec.expiresAt / 1000) });
     return json(200, { id, updatedAt: next.updatedAt, expiresAt: next.expiresAt });
   }

@@ -48,6 +48,7 @@ export function LockScreen() {
       </div>
       <TypedConfirm open={erase} onClose={() => setErase(false)} onConfirm={async () => { setErase(false); await eraseLockedData(); }} title="Erase all locked records?" word="ERASE" confirmLabel="Erase everything">
         <p>This permanently deletes every record and setting stored in this browser. Backup files you saved elsewhere are not affected and can be restored afterwards in Settings.</p>
+        <p className="mt-2">If you shared a live link with your doctor, it can’t be turned off from here (its key is locked too). It stops updating and stops working when it expires. Restoring a backup that has the link brings back the option to turn it off.</p>
       </TypedConfirm>
     </div>
   );

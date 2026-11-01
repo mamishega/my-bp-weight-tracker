@@ -63,7 +63,7 @@ await patient.getByRole('button', { name: 'Create link' }).click();
 const linkInput = patient.getByLabel('Link', { exact: true });
 await linkInput.waitFor({ timeout: 15000 });
 const link = await linkInput.inputValue();
-link.includes('#/shared/') && link.includes('?k=') ? ok('patient created a live link') : fail(`unexpected link ${link}`);
+/#\/d\/e2e-patient\/[A-Za-z0-9_-]{16}$/.test(link) ? ok(`patient created a short named link: ${link}`) : fail(`unexpected link ${link}`);
 
 // The doctor uses a completely separate browser profile.
 const doctorCtx = await browser.newContext();
@@ -75,7 +75,7 @@ await doctor.goto(link);
 await doctor.getByText(/Last updated by the patient/).waitFor({ timeout: 15000 });
 (await doctor.getByText('E2E Patient').count()) ? ok('doctor sees the patient name') : fail('name missing');
 (await doctor.getByText('151/93').count()) ? ok('doctor sees the first reading') : fail('first reading missing');
-requests.some((u) => u.includes('k=')) ? fail('the key was sent in a request') : ok('the key never left the doctor’s browser');
+requests.some((u) => u.includes(link.slice(-16))) ? fail('the key was sent in a request') : ok('the key never left the doctor’s browser');
 const dbs = await doctor.evaluate(async () => (await indexedDB.databases()).map((d) => d.name));
 dbs.length === 0 ? ok('the doctor’s browser stores no app database') : fail(`doctor has databases: ${dbs}`);
 

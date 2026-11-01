@@ -1,10 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { buildDemoData } from '../lib/demo';
 import { applyMerge, applyReplace, buildBackup, planImport } from '../lib/backup';
-import { emptyData } from '../lib/defaults';
+import { emptyData, normaliseSettings, normaliseShare } from '../lib/defaults';
 import {
   DEFAULT_SHARE_OPTIONS, _resetSyncForTests, buildShareLink, buildShareSnapshot, createShare, decryptSnapshot, deleteShare,
-  encryptSnapshot, fetchShared, generateShareKey, getSyncStatus, parseShareHash, relativeTime, requestSync, ShareHttpError,
+  encryptSnapshot, fetchShared, generateShareKey, generateShareSecret, getSyncStatus, parseShareHash, relativeTime, requestSync, resolveShareId, ShareHttpError,
+  shareIdFromSecret, slugifyName,
 } from '../lib/share';
 import type { AppData, ShareOptions } from '../types';
 import { installFakeShareServer, TEST_API } from './fakeShareServer';
@@ -36,13 +37,51 @@ describe('share encryption', () => {
     await expect(decryptSnapshot(sealed, await generateShareKey(), 'id-one')).rejects.toThrow();
   });
 
-  it('builds and parses links with the key only in the #fragment', () => {
+  it('builds short links: name label + 16-character secret, all in the #fragment', async () => {
+    const secret = generateShareSecret();
+    expect(secret).toMatch(/^[A-Za-z0-9_-]{16}$/);
+    const id = await shareIdFromSecret(secret);
+    expect(id).toMatch(/^[A-Za-z0-9_-]{22}$/);
+    expect(id).not.toContain(secret);
+    const link = buildShareLink({ id, key: secret, linkName: 'sam-citizen' }, 'https://x.example/app/');
+    expect(link).toBe(`https://x.example/app/#/d/sam-citizen/${secret}`);
+    expect(new URL(link).search).toBe('');
+    const parsed = parseShareHash(new URL(link).hash)!;
+    expect(parsed).toEqual({ id: null, key: secret, name: 'sam-citizen' });
+    expect(await resolveShareId(parsed)).toBe(id);
+    // No name, a pasted trailing full stop, and a changed name all still work.
+    expect(buildShareLink({ id, key: secret, linkName: '' }, 'https://x.example/')).toBe(`https://x.example/#/d/${secret}`);
+    expect(parseShareHash(`#/d/${secret}.`)?.key).toBe(secret);
+    expect(parseShareHash(`#/d/someone-else/${secret}`)?.key).toBe(secret);
+    expect(parseShareHash('#/d/sam/short')).toBeNull();
+    // Non-Latin names are kept (percent-encoded in the link).
+    const arabic = buildShareLink({ id, key: secret, linkName: slugifyName('محمد شريف') }, 'https://x.example/');
+    expect(parseShareHash(new URL(arabic).hash)?.name).toBe('محمد-شريف');
+  });
+
+  it('turns names into tidy link labels', () => {
+    expect(slugifyName('Sam Citizen')).toBe('sam-citizen');
+    expect(slugifyName('  Zoë  O’Brien-Smith!! ')).toBe('zoe-o-brien-smith');
+    expect(slugifyName('')).toBe('');
+    expect(slugifyName('a'.repeat(80)).length).toBe(40);
+  });
+
+  it('short-link secrets encrypt and decrypt (key derived with HKDF)', async () => {
+    const secret = generateShareSecret();
+    const id = await shareIdFromSecret(secret);
+    const snap = buildShareSnapshot(realData(), DEFAULT_SHARE_OPTIONS, NOW);
+    const sealed = await encryptSnapshot(snap, secret, id);
+    expect(await decryptSnapshot(sealed, secret, id)).toEqual(snap);
+    await expect(decryptSnapshot(sealed, generateShareSecret(), id)).rejects.toThrow();
+  });
+
+  it('still parses older long links', () => {
     const id = 'A'.repeat(22);
     const key = 'b'.repeat(43);
-    const link = buildShareLink(id, key, 'https://x.example/app/');
+    const link = buildShareLink({ id, key, linkName: 'ignored' }, 'https://x.example/app/');
     expect(link).toBe(`https://x.example/app/#/shared/${id}?k=${key}`);
     expect(new URL(link).search).toBe('');
-    expect(parseShareHash(new URL(link).hash)).toEqual({ id, key });
+    expect(parseShareHash(new URL(link).hash)).toEqual({ id, key, name: null });
     expect(parseShareHash(`#/shared/${id}?k=short`)).toBeNull();
     expect(parseShareHash(`#/shared/${id}`)).toBeNull();
   });
@@ -70,11 +109,12 @@ describe('share snapshot contents', () => {
 
   it('never includes reminders, habits, supply, monitors, appointment notes or share secrets', () => {
     const data = realData();
-    data.settings.share = { id: 'X'.repeat(22), token: 'SECRET-TOKEN', key: 'SECRET-KEY', createdAt: '', expiresAt: '', options: DEFAULT_SHARE_OPTIONS };
+    data.settings.share = { id: 'X'.repeat(22), token: 'SECRET-TOKEN', key: 'SECRET-KEY', linkName: 'secret-name', createdAt: '', expiresAt: '', options: DEFAULT_SHARE_OPTIONS };
     const snap = buildShareSnapshot(data, { ...DEFAULT_SHARE_OPTIONS, sessionNotes: true, symptoms: true, lifestyle: true, questions: true }, NOW);
     const text = JSON.stringify(snap);
     expect(text).not.toContain('SECRET-TOKEN');
     expect(text).not.toContain('SECRET-KEY');
+    expect(text).not.toContain('secret-name');
     expect(snap.data.reminderStates).toEqual([]);
     expect(snap.data.habits).toEqual([]);
     expect(snap.data.habitChecks).toEqual([]);
@@ -109,12 +149,16 @@ describe('live link with the share relay', () => {
 
   it('the same link shows changes after the patient edits records', async () => {
     let data = realData();
-    const cfg = await createShare(data, DEFAULT_SHARE_OPTIONS, 30);
+    const cfg = await createShare(data, DEFAULT_SHARE_OPTIONS, 30, 'Sam Citizen');
+    expect(cfg.linkName).toBe('sam-citizen');
+    expect(cfg.key).toMatch(/^[A-Za-z0-9_-]{16}$/);
+    expect(cfg.id).toBe(await shareIdFromSecret(cfg.key));
     data = { ...data, settings: { ...data.settings, share: cfg } };
     // The relay holds only ciphertext.
     const stored = server.env.SHARES.map.get(`share:${cfg.id}`)!.value;
     expect(stored).not.toContain('session note');
     expect(stored).not.toContain(cfg.key);
+    expect(stored).not.toContain('sam-citizen');
 
     const first = await fetchShared(cfg.id, cfg.key);
     expect(first.snapshot.data.sessions.length).toBe(buildShareSnapshot(data, cfg.options).data.sessions.length);
@@ -150,6 +194,64 @@ describe('live link with the share relay', () => {
     expect(getSyncStatus(cfg.id).state).toBe('ok');
   });
 
+  it('a queued update can never reach the server after the link is turned off', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    try {
+      let data = realData();
+      const cfg = await createShare(data, DEFAULT_SHARE_OPTIONS, 30);
+      data = { ...data, settings: { ...data.settings, share: cfg }, weights: data.weights.slice(2) };
+      await requestSync(data); // just uploaded, so this waits for the 15 s throttle
+      await deleteShare(cfg);
+      await requestSync(data, { force: true });
+      await vi.advanceTimersByTimeAsync(120_000);
+      const lastDelete = server.calls.map((c) => c.method).lastIndexOf('DELETE');
+      expect(server.calls.slice(lastDelete + 1).filter((c) => c.method === 'PUT')).toEqual([]);
+      expect(server.env.SHARES.map.has(`share:${cfg.id}`)).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('retries by itself after the server could not be reached', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    try {
+      let data = realData();
+      const cfg = await createShare(data, DEFAULT_SHARE_OPTIONS, 30);
+      data = { ...data, settings: { ...data.settings, share: cfg }, weights: data.weights.slice(3) };
+      server.setOffline(true);
+      await requestSync(data, { force: true });
+      expect(getSyncStatus(cfg.id).state).toBe('offline');
+      server.setOffline(false);
+      await vi.advanceTimersByTimeAsync(61_000);
+      await vi.waitFor(() => expect(getSyncStatus(cfg.id).state).toBe('ok'));
+      const got = await fetchShared(cfg.id, cfg.key);
+      expect(got.snapshot.data.weights.length).toBe(buildShareSnapshot(data, cfg.options).data.weights.length);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('only one device updates a link; another device can take over on request', async () => {
+    let data = realData();
+    const cfg = await createShare(data, DEFAULT_SHARE_OPTIONS, 30, 'Sam');
+    data = { ...data, settings: { ...data.settings, share: cfg } };
+    // A second device (e.g. after restoring a backup) with fewer records.
+    const original = localStorage.getItem('bpt-device-id');
+    localStorage.setItem('bpt-device-id', 'second-device-0001');
+    const older = { ...data, sessions: data.sessions.slice(0, 3) };
+    await requestSync(older, { force: true });
+    expect(getSyncStatus(cfg.id).state).toBe('other-device');
+    expect((await fetchShared(cfg.id, cfg.key)).snapshot.data.sessions.length).toBe(buildShareSnapshot(data, cfg.options).data.sessions.length);
+    // The user chooses to update from the second device.
+    await requestSync(older, { force: true, takeover: true });
+    expect(getSyncStatus(cfg.id).state).toBe('ok');
+    expect((await fetchShared(cfg.id, cfg.key)).snapshot.data.sessions.length).toBe(3);
+    // Now the first device is the one that is refused.
+    localStorage.setItem('bpt-device-id', original!);
+    await requestSync(data, { force: true });
+    expect(getSyncStatus(cfg.id).state).toBe('other-device');
+  });
+
   it('turning sharing off makes the link stop working', async () => {
     const cfg = await createShare(realData(), DEFAULT_SHARE_OPTIONS, 30);
     await deleteShare(cfg);
@@ -161,12 +263,21 @@ describe('live link with the share relay', () => {
 
 describe('share settings and backups', () => {
   it('restoring a backup keeps the link active on this device', () => {
-    const share = { id: 'L'.repeat(22), token: 't', key: 'k', createdAt: '', expiresAt: '', options: DEFAULT_SHARE_OPTIONS };
+    const share = { id: 'L'.repeat(22), token: 't', key: 'k', linkName: '', createdAt: '', expiresAt: '', options: DEFAULT_SHARE_OPTIONS };
     const current = { ...emptyData(), settings: { ...emptyData().settings, share } };
     const backup = buildBackup({ ...realData(), settings: { ...realData().settings, share: null } }, 'real');
     expect(applyReplace(current, backup).settings.share).toEqual(share);
     const merged = applyMerge(current, backup, planImport(current, backup), { conflicts: 'keep_current', possibleDuplicates: 'skip', settings: 'use_backup' });
     expect(merged.settings.share).toEqual(share);
+  });
+
+  it('ignores an incomplete share entry from storage or a backup, and fills in missing options', () => {
+    expect(normaliseShare(undefined)).toBeNull();
+    expect(normaliseShare({ id: 'x' })).toBeNull();
+    expect(normaliseShare({ id: 'x', token: 't', key: 'k', expiresAt: 'not a date' })).toBeNull();
+    const n = normaliseShare({ id: 'x', token: 't', key: 'k', expiresAt: '2027-01-01T00:00:00Z', options: { symptoms: false, windowDays: 12, displayName: 5 } });
+    expect(n?.options).toEqual({ ...DEFAULT_SHARE_OPTIONS, symptoms: false });
+    expect(normaliseSettings({ share: { broken: true } } as never).share).toBeNull();
   });
 
   it('formats relative times', () => {

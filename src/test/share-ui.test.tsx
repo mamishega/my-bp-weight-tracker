@@ -8,7 +8,7 @@ import { App } from '../App';
 import { SharedView } from '../pages/SharedView';
 import { closeStore, DB_NAMES, loadAll, lock, replaceAll } from '../db/db';
 import { buildDemoData } from '../lib/demo';
-import { DEFAULT_SHARE_OPTIONS, _resetSyncForTests, createShare, deleteShare, parseShareHash } from '../lib/share';
+import { DEFAULT_SHARE_OPTIONS, _resetSyncForTests, createShare, deleteShare, parseShareHash, resolveShareId } from '../lib/share';
 import { installFakeShareServer, TEST_API } from './fakeShareServer';
 
 HTMLDialogElement.prototype.showModal ??= function (this: HTMLDialogElement) { this.setAttribute('open', ''); };
@@ -47,18 +47,21 @@ describe('doctor share link (patient side)', () => {
     await user.click(screen.getByRole('button', { name: 'Create link' }));
 
     const input = (await screen.findByLabelText('Link', {}, { timeout: 5000 })) as HTMLInputElement;
+    expect(input.value).toMatch(/#\/d\/sam-citizen\/[A-Za-z0-9_-]{16}$/);
     const parsed = parseShareHash(new URL(input.value).hash);
     expect(parsed).not.toBeNull();
+    const id = await resolveShareId(parsed!);
     const saved = await loadAll('real');
-    expect(saved.settings.share?.id).toBe(parsed!.id);
+    expect(saved.settings.share?.id).toBe(id);
+    expect(saved.settings.share?.linkName).toBe('sam-citizen');
     expect(saved.settings.share?.options.displayName).toBe('Sam Citizen');
-    expect(server.env.SHARES.map.has(`share:${parsed!.id}`)).toBe(true);
+    expect(server.env.SHARES.map.has(`share:${id}`)).toBe(true);
 
     await user.click(screen.getByRole('button', { name: 'Turn off sharing' }));
     const dialogButtons = await screen.findAllByRole('button', { name: 'Turn off sharing' });
     await user.click(dialogButtons[dialogButtons.length - 1]);
     await screen.findByRole('button', { name: 'Create link' }, { timeout: 5000 });
-    expect(server.env.SHARES.map.has(`share:${parsed!.id}`)).toBe(false);
+    expect(server.env.SHARES.map.has(`share:${id}`)).toBe(false);
     expect((await loadAll('real')).settings.share).toBeNull();
   }, 20000);
 
@@ -75,7 +78,7 @@ describe('doctor share link (doctor side)', () => {
   it('shows the decrypted records read-only, with no accessibility violations', async () => {
     const data = buildDemoData('Australia/Sydney');
     const cfg = await createShare(data, { ...DEFAULT_SHARE_OPTIONS, displayName: 'Sam Citizen' }, 30);
-    const { container } = render(<SharedView id={cfg.id} shareKey={cfg.key} />);
+    const { container } = render(<SharedView link={{ id: null, key: cfg.key, name: 'sam-citizen' }} />);
     await screen.findByText(/last updated by the patient/i, {}, { timeout: 5000 });
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(/blood pressure & weight summary/i);
     expect(screen.getByText(/Sam Citizen/)).toBeInTheDocument();
@@ -90,14 +93,14 @@ describe('doctor share link (doctor side)', () => {
   it('says so when the link was turned off', async () => {
     const cfg = await createShare(buildDemoData('Australia/Sydney'), DEFAULT_SHARE_OPTIONS, 30);
     await deleteShare(cfg);
-    render(<SharedView id={cfg.id} shareKey={cfg.key} />);
+    render(<SharedView link={{ id: null, key: cfg.key, name: 'sam-citizen' }} />);
     expect(await screen.findByText(/turned off or has expired/i)).toBeInTheDocument();
   });
 
   it('says so when the key in the link is wrong', async () => {
     const cfg = await createShare(buildDemoData('Australia/Sydney'), DEFAULT_SHARE_OPTIONS, 30);
     const other = await createShare(buildDemoData('Australia/Sydney'), DEFAULT_SHARE_OPTIONS, 30);
-    render(<SharedView id={cfg.id} shareKey={other.key} />);
+    render(<SharedView link={{ id: cfg.id, key: other.key, name: null }} />);
     expect(await screen.findByText(/incomplete or damaged/i)).toBeInTheDocument();
     await waitFor(() => expect(screen.queryByText(/original readings/i)).toBeNull());
   });

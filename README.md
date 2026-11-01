@@ -108,10 +108,11 @@ In-app reminders (morning before-med, medication, after-medication timed from th
 
 A shared link that **updates when you add records** can't work from a local-only app. Something online has to hold the latest copy. This is kept as small and private as possible:
 
-- **End-to-end encrypted.** The app builds a snapshot of only what you chose, then encrypts it on your device with a random AES-256-GCM key. The link's id is bound in as associated data. Only the ciphertext is uploaded. The key is in the link after the `#`, and browsers never send that part to any server, so the relay (and Cloudflare) can't read your records.
+- **End-to-end encrypted, short link.** Links look like `https://mamishega.github.io/my-bp-weight-tracker/#/d/sam-citizen/Xk3pQ9rT2mWv8bLc`. The last part is a random 96-bit secret. The AES-256-GCM key is derived from it with HKDF-SHA-256, and the relay's record id is a SHA-256 hash of it. Only ciphertext is uploaded, and everything after `#` stays in the browser, so the relay (and Cloudflare) can't read the records. The name (`sam-citizen`, from *Name in the link*) is only a label to help your doctor recognise the link. It's never uploaded, can be changed or left out, and links already sent keep working. Anyone who sees the link sees the name. Older long links (`#/shared/<id>?k=<key>`) still work. *Replace with a new link* switches to the short format.
+- **One device at a time.** Each browser has a random device id. The relay only accepts updates from the device that last updated the link. If you restore a backup on a second device, that device shows *Another device is updating this link* instead of overwriting newer records with older ones, and offers *Update from this device instead*.
 - **Updates itself.** About 3 seconds after any change (at most once every 15 s), and when you come back online, the app re-encrypts and replaces the stored copy. Unchanged data isn't re-uploaded. The doctor's page checks for new data every minute and shows *Last updated by the patient …*. If you haven't opened the app for more than 3 days, it says newer readings may be missing.
 - **What's shared:** readings, medication records, weight (plus 6 earlier days so the 7-day average is right), personal targets and next appointment date/clinician. Notes, symptoms diary, lifestyle notes, questions and quality notes are only included if you tick them. The link never contains reminders, habits, supply counts, monitors, appointment notes or location, backup info, or the link's own secrets.
-- **Control:** links expire after 30–365 days (the expiry is never extended by updates). *Turn off sharing* deletes the stored copy immediately. *Replace with a new link* does the same and creates a fresh one. *Delete all data* also turns the link off. Sharing is unavailable in demo mode and pauses while the passcode lock is closed. The link's secrets live in your settings, so they are encrypted by the passcode lock and included in backups. Restoring a backup keeps the link that's active on this device.
+- **Control:** links expire after 30–365 days (the expiry is never extended by updates). *Turn off sharing* deletes the stored copy immediately. *Replace with a new link* does the same and creates a fresh one. *Delete all data* also turns the link off. Erasing after a forgotten passcode can't turn it off, because the link's secret is locked too. It stops updating and expires on its own. Sharing is unavailable in demo mode and pauses while the passcode lock is closed. The link's secrets live in your settings, so they are encrypted by the passcode lock and included in backups. Restoring a backup keeps the link that's active on this device.
 - **The doctor's view** (`#/shared/<id>?k=<key>`) is read-only and starts only the viewer. It never opens or creates app storage in the doctor's browser. It shows charts plus the same content as the printable report, lets the doctor switch between 7/14/30/90 days, and prints to PDF. It states clearly that the records aren't monitored.
 - **Not monitoring:** nobody is alerted to new readings. The urgent-symptom guidance is unchanged.
 
@@ -147,7 +148,7 @@ Limitations: the free KV tier allows 1,000 writes a day, which is far more than 
 
 ## Testing
 
-`npm test` runs 200 tests (all passing). Main areas:
+`npm test` runs 209 tests (all passing). Main areas:
 
 | Area | File |
 |---|---|
@@ -161,8 +162,8 @@ Limitations: the free KV tier allows 1,000 writes a day, which is far more than 
 | Calendar export: time zone, repeat rules, alarms, no health details | `src/test/ics.test.ts` |
 | axe-core on every page (plus a check that axe really detects violations) | `src/test/a11y.test.tsx`, `src/test/axe-sanity.test.tsx` |
 | Guidance review date and source links | `src/test/guidance.test.ts` |
-| Doctor share link: encryption and id binding, link format (key only in `#`), snapshot contents (window, opt-in notes, no secrets/reminders/monitors), same link shows edits, unchanged data not re-uploaded, offline status, turning off, backups keep the link | `src/test/share.test.ts` |
-| Share relay worker: create/read/update/delete, token required, origin checks, CORS, expiry, size and format limits | `src/test/share-worker.test.ts` |
+| Doctor share link: encryption and id binding, short named links (secret only in `#`, HKDF key, hashed id, older links still parse), name labels incl. non-Latin names, one-device-at-a-time with takeover, snapshot contents (window, opt-in notes, no secrets/reminders/monitors), same link shows edits, unchanged data not re-uploaded, offline status, turning off, backups keep the link | `src/test/share.test.ts` |
+| Share relay worker: create/read/update/delete, app-chosen ids (no reuse), single-writer device lock and takeover, token required, origin checks, CORS, expiry, size and format limits | `src/test/share-worker.test.ts` |
 | Share page create/turn-off flow, "not set up" state, doctor view (read-only, axe), turned-off and wrong-key links | `src/test/share-ui.test.tsx` |
 
 These were also checked against the production build in headless Chrome (1 Nov 2026): service worker control, **offline reload + saving a reading offline + persistence after reload**, demo data not appearing in personal history, no requests to any host other than the app's own, no console errors, and mobile and print layouts.

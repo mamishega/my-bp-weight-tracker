@@ -1,31 +1,25 @@
 // Live doctor share link.
 //
 // The patient's browser builds a snapshot of the chosen records, encrypts it
-// with AES-256-GCM using a random key, and uploads only the ciphertext to the
-// share relay (share-worker/). The key is placed in the link's #fragment,
-// which browsers never send to any server, so the relay cannot read it.
+// with AES-256-GCM, and uploads only the ciphertext to the share relay
+// (share-worker/). Links carry a short random secret (96 bits) in the
+// #fragment, which browsers never send to any server. The AES key and the
+// relay's record id are both derived from that secret (HKDF / SHA-256), so the
+// relay cannot read the data and the link stays short:
+//   https://…/#/d/sam-citizen/Xk3pQ9rT2mWv8bLc   (the name is only a label)
+// Older links (#/shared/<id>?k=<43-char key>) keep working.
 // Whenever records change, the app re-encrypts and replaces the blob, so the
 // same link always shows the latest data.
 
 import type { AppData, ISODate, ShareConfig, ShareOptions } from '../types';
 import { addDays, todayIn } from './time';
-import { defaultSettings, emptyData } from './defaults';
+import { DEFAULT_SHARE_OPTIONS, defaultSettings, emptyData } from './defaults';
 
 export const SHARE_APP_ID = 'my-bp-weight-tracker-share';
 export const SHARE_WINDOWS = [30, 90, 180, 365] as const;
 export const SHARE_EXPIRY_DAYS = [30, 90, 180, 365] as const;
 
-export const DEFAULT_SHARE_OPTIONS: ShareOptions = {
-  windowDays: 90,
-  displayName: '',
-  sessionNotes: true,
-  symptoms: true,
-  lifestyle: false,
-  doseNotes: true,
-  questions: true,
-  quality: true,
-  weightNotes: false,
-};
+export { DEFAULT_SHARE_OPTIONS };
 
 /** Base URL of the share relay, set at build time (VITE_SHARE_API_URL). Empty = not set up. */
 export function shareApiBase(): string {
@@ -61,7 +55,31 @@ export async function generateShareKey(): Promise<string> {
   return toUrl(toB64(new Uint8Array(await crypto.subtle.exportKey('raw', key))));
 }
 
+export const SECRET_RE = /^[A-Za-z0-9_-]{16}$/;
+const enc = new TextEncoder();
+
+/** 96-bit random link secret, 16 URL-safe characters. */
+export function generateShareSecret(): string {
+  return toUrl(toB64(crypto.getRandomValues(new Uint8Array(12))));
+}
+
+/** The relay's record id for a short link: a one-way hash of the secret. */
+export async function shareIdFromSecret(secret: string): Promise<string> {
+  const buf = await crypto.subtle.digest('SHA-256', enc.encode(`my-bp-weight-tracker-share:id:${secret}`));
+  return toUrl(toB64(new Uint8Array(buf))).slice(0, 22);
+}
+
 async function importKey(k: string): Promise<CryptoKey> {
+  if (SECRET_RE.test(k)) {
+    const base = await crypto.subtle.importKey('raw', fromB64(fromUrl(k)), 'HKDF', false, ['deriveKey']);
+    return crypto.subtle.deriveKey(
+      { name: 'HKDF', hash: 'SHA-256', salt: enc.encode('my-bp-weight-tracker-share-v2'), info: enc.encode('aes-256-gcm') },
+      base,
+      { name: 'AES-GCM', length: 256 },
+      false,
+      ['encrypt', 'decrypt'],
+    );
+  }
   const raw = fromB64(fromUrl(k));
   if (raw.length !== 32) throw new Error('Invalid key');
   return crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt', 'decrypt']);
@@ -167,16 +185,70 @@ export function relativeTime(ms: number, now = Date.now()): string {
 }
 
 // ---------- links ----------
-export function buildShareLink(id: string, key: string, base = `${location.origin}${location.pathname}`): string {
-  return `${base}#/shared/${id}?k=${key}`;
+/** "Sam Citizen" → "sam-citizen". Letters in any alphabet are kept. */
+export function slugifyName(name: string): string {
+  return name
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40)
+    .replace(/-+$/, '');
 }
 
-export function parseShareHash(hash: string): { id: string; key: string } | null {
+export function isSharedHash(hash: string): boolean {
+  return hash.startsWith('#/d/') || hash.startsWith('#/shared/');
+}
+
+export function buildShareLink(cfg: Pick<ShareConfig, 'id' | 'key' | 'linkName'>, base = `${location.origin}${location.pathname}`): string {
+  if (SECRET_RE.test(cfg.key)) {
+    const name = slugifyName(cfg.linkName ?? '');
+    return `${base}#/d/${name ? `${encodeURIComponent(name)}/` : ''}${cfg.key}`;
+  }
+  return `${base}#/shared/${cfg.id}?k=${cfg.key}`;
+}
+
+export interface ParsedShareLink { id: string | null; key: string; name: string | null }
+
+/** Parse a link's #fragment. Short links need resolveShareId() for the id. */
+export function parseShareHash(hash: string): ParsedShareLink | null {
+  const short = hash.match(/^#\/d\/(?:([^/]*)\/)?([A-Za-z0-9_-]{16})[^A-Za-z0-9_-]*$/);
+  if (short) {
+    let name: string | null = null;
+    try {
+      name = short[1] ? decodeURIComponent(short[1]) : null;
+    } catch {
+      name = short[1] ?? null;
+    }
+    return { id: null, key: short[2], name };
+  }
   const m = hash.match(/^#\/shared\/([A-Za-z0-9_-]{22})\?(.*)$/);
   if (!m) return null;
   const key = new URLSearchParams(m[2]).get('k');
   if (!key || !/^[A-Za-z0-9_-]{43}$/.test(key)) return null;
-  return { id: m[1], key };
+  return { id: m[1], key, name: null };
+}
+
+export async function resolveShareId(p: ParsedShareLink): Promise<string> {
+  return p.id ?? shareIdFromSecret(p.key);
+}
+
+// ---------- this device ----------
+const DEVICE_KEY = 'bpt-device-id';
+let memoryDeviceId: string | null = null;
+/** Random id for this browser, so only one device updates a link at a time. */
+export function deviceId(): string {
+  try {
+    let v = localStorage.getItem(DEVICE_KEY);
+    if (!v) {
+      v = generateShareSecret();
+      localStorage.setItem(DEVICE_KEY, v);
+    }
+    return v;
+  } catch {
+    return (memoryDeviceId ??= generateShareSecret());
+  }
 }
 
 // ---------- API ----------
@@ -208,25 +280,26 @@ async function call<T>(method: string, path: string, body?: unknown, token?: str
   return (res.status === 204 ? null : await res.json()) as T;
 }
 
-/** Create a new link and upload the first snapshot. */
-export async function createShare(data: AppData, options: ShareOptions, expiresInDays: number): Promise<ShareConfig> {
-  const key = await generateShareKey();
-  // The id comes from the server, so encrypt a placeholder first, then upload the real snapshot bound to the id.
-  const placeholder = await encryptSnapshot(buildShareSnapshot(emptyData(), options), key, 'pending');
-  const created = await call<{ id: string; token: string; updatedAt: number; expiresAt: number }>('POST', '/v1/shares', { ...placeholder, expiresInDays });
-  const config: ShareConfig = { id: created.id, token: created.token, key, createdAt: new Date(created.updatedAt).toISOString(), expiresAt: new Date(created.expiresAt).toISOString(), options };
+/** Create a new short link and upload the first snapshot. */
+export async function createShare(data: AppData, options: ShareOptions, expiresInDays: number, linkName = ''): Promise<ShareConfig> {
+  const secret = generateShareSecret();
+  const id = await shareIdFromSecret(secret);
   const snap = buildShareSnapshot(data, options);
-  try {
-    await call('PUT', `/v1/shares/${config.id}`, await encryptSnapshot(snap, key, config.id), config.token);
-  } catch (e) {
-    await call('DELETE', `/v1/shares/${config.id}`, undefined, config.token).catch(() => undefined);
-    throw e;
-  }
+  const created = await call<{ id: string; token: string; updatedAt: number; expiresAt: number }>('POST', '/v1/shares', { ...(await encryptSnapshot(snap, secret, id)), id, expiresInDays, writer: deviceId() });
+  const config: ShareConfig = { id, token: created.token, key: secret, linkName: slugifyName(linkName), createdAt: new Date(created.updatedAt).toISOString(), expiresAt: new Date(created.expiresAt).toISOString(), options };
   rememberUpload(config.id, await snapshotFingerprint(snap));
   return config;
 }
 
 export async function deleteShare(config: ShareConfig): Promise<void> {
+  // Make sure no queued or in-flight update for this link can reach the
+  // server after the delete (it would otherwise be re-created or race it).
+  deletedIds.add(config.id);
+  if (timer) clearTimeout(timer);
+  timer = null;
+  queued = null;
+  lastRequested = null;
+  if (inFlight) await inFlight.catch(() => undefined);
   try {
     await call('DELETE', `/v1/shares/${config.id}`, undefined, config.token);
   } catch (e) {
@@ -241,7 +314,7 @@ export async function fetchShared(id: string, key: string): Promise<{ snapshot: 
 }
 
 // ---------- background sync ----------
-export type SyncState = 'idle' | 'uploading' | 'ok' | 'offline' | 'error' | 'gone';
+export type SyncState = 'idle' | 'uploading' | 'ok' | 'offline' | 'error' | 'gone' | 'other-device';
 export interface SyncStatus { state: SyncState; lastUploadedAt: number | null; message: string | null }
 
 const MIN_INTERVAL_MS = 15_000;
@@ -252,6 +325,11 @@ const listeners = new Set<() => void>();
 let inFlight: Promise<void> | null = null;
 let queued: AppData | null = null;
 let timer: ReturnType<typeof setTimeout> | null = null;
+/** Latest data handed to requestSync, used to retry after a failure. */
+let lastRequested: AppData | null = null;
+/** Links turned off in this session: never upload to them again. */
+const deletedIds = new Set<string>();
+const RETRY_MS = 60_000;
 
 function readStored(id: string): { hash: string | null; at: number | null } {
   try {
@@ -302,10 +380,11 @@ export function subscribeSync(l: () => void): () => void {
  * Upload the latest snapshot if it differs from the last upload. Calls are
  * coalesced: at most one request in flight, and at most one every 15 seconds.
  */
-export function requestSync(data: AppData, opts: { force?: boolean } = {}): Promise<void> {
+export function requestSync(data: AppData, opts: { force?: boolean; takeover?: boolean } = {}): Promise<void> {
   const cfg = data.settings.share;
-  if (!cfg) return Promise.resolve();
+  if (!cfg || deletedIds.has(cfg.id)) return Promise.resolve();
   queued = data;
+  lastRequested = data;
   if (inFlight) return inFlight;
   const last = statusId === cfg.id ? status.lastUploadedAt : readStored(cfg.id).at;
   const wait = opts.force || !last ? 0 : Math.max(0, last + MIN_INTERVAL_MS - Date.now());
@@ -318,7 +397,7 @@ export function requestSync(data: AppData, opts: { force?: boolean } = {}): Prom
       while (queued) {
         const d = queued;
         queued = null;
-        await uploadOnce(d, !!opts.force);
+        await uploadOnce(d, !!opts.force, !!opts.takeover);
       }
     } finally {
       inFlight = null;
@@ -327,9 +406,9 @@ export function requestSync(data: AppData, opts: { force?: boolean } = {}): Prom
   return inFlight;
 }
 
-async function uploadOnce(data: AppData, force: boolean) {
+async function uploadOnce(data: AppData, force: boolean, takeover = false) {
   const cfg = data.settings.share;
-  if (!cfg || !shareAvailable()) return;
+  if (!cfg || deletedIds.has(cfg.id) || !shareAvailable()) return;
   if (new Date(cfg.expiresAt).getTime() <= Date.now()) {
     setStatus(cfg.id, { ...getSyncStatus(cfg.id), state: 'gone', message: 'This link has expired.' });
     return;
@@ -342,21 +421,36 @@ async function uploadOnce(data: AppData, force: boolean) {
   }
   if (typeof navigator !== 'undefined' && navigator.onLine === false) {
     setStatus(cfg.id, { ...getSyncStatus(cfg.id), state: 'offline', message: 'Waiting for an internet connection.' });
+    scheduleRetry();
     return;
   }
   setStatus(cfg.id, { ...getSyncStatus(cfg.id), state: 'uploading', message: null });
   try {
-    await call('PUT', `/v1/shares/${cfg.id}`, await encryptSnapshot(snap, cfg.key, cfg.id), cfg.token);
+    await call('PUT', `/v1/shares/${cfg.id}`, { ...(await encryptSnapshot(snap, cfg.key, cfg.id)), writer: deviceId(), ...(takeover ? { takeover: true } : {}) }, cfg.token);
     rememberUpload(cfg.id, hash);
   } catch (e) {
+    if (e instanceof ShareHttpError && e.status === 409) {
+      setStatus(cfg.id, { ...getSyncStatus(cfg.id), state: 'other-device', message: 'Another device is now updating this link, so this device has stopped, to avoid replacing newer records with older ones.' });
+      return;
+    }
     const gone = e instanceof ShareHttpError && (e.status === 404 || e.status === 403);
     const offline = !(e instanceof ShareHttpError);
     setStatus(cfg.id, {
       ...getSyncStatus(cfg.id),
       state: gone ? 'gone' : offline ? 'offline' : 'error',
-      message: gone ? 'This link has expired or was turned off.' : offline ? 'Could not reach the share server. It will retry when you are online.' : (e as Error).message,
+      message: gone ? 'This link has expired or was turned off.' : offline ? 'Could not reach the share server. It will try again shortly.' : (e as Error).message,
     });
+    if (!gone) scheduleRetry();
   }
+}
+
+/** Try again in a minute after a network or server failure. */
+function scheduleRetry() {
+  if (timer) return;
+  timer = setTimeout(() => {
+    timer = null;
+    if (lastRequested) void requestSync(lastRequested);
+  }, RETRY_MS);
 }
 
 /** Test helper. */
@@ -365,6 +459,8 @@ export function _resetSyncForTests() {
   statusId = null;
   inFlight = null;
   queued = null;
+  lastRequested = null;
+  deletedIds.clear();
   if (timer) clearTimeout(timer);
   timer = null;
 }

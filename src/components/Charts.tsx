@@ -48,7 +48,7 @@ function Tip({ active, payload }: { active?: boolean; payload?: TipPayload[] }) 
   );
 }
 
-export function BPChart({ sessions, measure, from, to, target, visible }: { sessions: BPSession[]; measure: 'systolic' | 'diastolic'; from: ISODate; to: ISODate; target: number | null; visible: Record<SessionType, boolean> }) {
+export function BPChart({ sessions, measure, from, to, target, visible, targetLabel = 'Your target' }: { sessions: BPSession[]; measure: 'systolic' | 'diastolic'; from: ISODate; to: ISODate; target: number | null; visible: Record<SessionType, boolean>; targetLabel?: string }) {
   const types = (['morning_pre', 'morning_post', 'evening'] as SessionType[]).filter((t) => visible[t]);
   const series = types.map((t) => ({
     type: t,
@@ -80,7 +80,7 @@ export function BPChart({ sessions, measure, from, to, target, visible }: { sess
               <CartesianGrid stroke={GRID} vertical={false} />
               <XAxis type="number" dataKey="x" domain={[dateToDayNumber(from), dateToDayNumber(to) + 1]} ticks={ticks(from, to)} tickFormatter={(v: number) => formatDateTiny(dayNumberToDate(Math.floor(v)))} stroke={AXIS} fontSize={12} allowDuplicatedCategory={false} />
               <YAxis type="number" dataKey="y" domain={['dataMin - 8', 'dataMax + 8']} stroke={AXIS} fontSize={12} width={44} tickFormatter={(v: number) => String(Math.round(v))} label={{ value: 'mmHg', angle: -90, position: 'insideLeft', fill: AXIS, fontSize: 12 }} />
-              {target != null && <ReferenceLine y={target} stroke="var(--chart-ref)" strokeDasharray="4 4" label={{ value: `Your target ${target}`, fill: 'var(--chart-axis)', fontSize: 11, position: 'insideTopRight' }} />}
+              {target != null && <ReferenceLine y={target} stroke="var(--chart-ref)" strokeDasharray="4 4" label={{ value: `${targetLabel} ${target}`, fill: 'var(--chart-axis)', fontSize: 11, position: 'insideTopRight' }} />}
               <Tooltip content={<Tip />} cursor={{ stroke: 'var(--chart-ref)' }} />
               {series.map((s) => (
                 <Scatter key={s.type} name={SESSION_LABEL[s.type]} data={s.data} fill={SESSION_STYLE[s.type].color} shape={SESSION_STYLE[s.type].shape} line={{ stroke: SESSION_STYLE[s.type].color, strokeWidth: 2 }} lineJointType="linear" isAnimationActive={false} />

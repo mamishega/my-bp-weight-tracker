@@ -1,4 +1,4 @@
-import type { AppData, Meta, Settings } from '../types';
+import type { AppData, Meta, Settings, ShareConfig, ShareOptions } from '../types';
 import { deviceTimeZone } from './time';
 
 export const SCHEMA_VERSION = 1;
@@ -67,6 +67,33 @@ export function emptyData(): AppData {
   };
 }
 
+export const DEFAULT_SHARE_OPTIONS: ShareOptions = {
+  windowDays: 90,
+  displayName: '',
+  sessionNotes: true,
+  symptoms: true,
+  lifestyle: false,
+  doseNotes: true,
+  questions: true,
+  quality: true,
+  weightNotes: false,
+};
+
+/** A stored/imported share link is used only if it is complete; options are filled in. */
+export function normaliseShare(v: unknown): ShareConfig | null {
+  if (!v || typeof v !== 'object') return null;
+  const c = v as Partial<ShareConfig>;
+  const str = (x: unknown) => typeof x === 'string' && x.length > 0;
+  if (!str(c.id) || !str(c.token) || !str(c.key) || !str(c.expiresAt) || Number.isNaN(Date.parse(c.expiresAt!))) return null;
+  const o = (c.options && typeof c.options === 'object' ? c.options : {}) as Partial<ShareOptions>;
+  const options = { ...DEFAULT_SHARE_OPTIONS };
+  for (const k of Object.keys(DEFAULT_SHARE_OPTIONS) as (keyof ShareOptions)[]) {
+    if (typeof o[k] === typeof DEFAULT_SHARE_OPTIONS[k]) (options as Record<string, unknown>)[k] = o[k];
+  }
+  if (![30, 90, 180, 365].includes(options.windowDays)) options.windowDays = 90;
+  return { id: c.id!, token: c.token!, key: c.key!, linkName: typeof c.linkName === 'string' ? c.linkName : '', createdAt: str(c.createdAt) ? c.createdAt! : c.expiresAt!, expiresAt: c.expiresAt!, options };
+}
+
 /** Fill in any settings fields missing from older saved/imported data. */
 export function normaliseSettings(s: Partial<Settings> | undefined): Settings {
   const d = defaultSettings();
@@ -86,7 +113,7 @@ export function normaliseSettings(s: Partial<Settings> | undefined): Settings {
       appointment: { ...d.reminders.appointment, ...(s.reminders?.appointment ?? {}) },
     },
     monitors: s.monitors ?? [],
-    share: s.share ?? null,
+    share: normaliseShare(s.share),
     id: 'settings',
   };
 }
