@@ -120,7 +120,13 @@ export function StoreProvider({ children, initialMode }: { children: ReactNode; 
 
   const remove = useCallback(async (name: CollectionName, id: string) => {
     await db.deleteRecord(modeRef.current, name, id);
-    setData((d) => ({ ...d, [name]: (d[name] as { id: string }[]).filter((r) => r.id !== id) }));
+    // Remember the deletion (id and time only) so cloud sync doesn't bring the record back.
+    const meta = dataRef.current.meta;
+    const cutoff = new Date(Date.now() - 400 * 86_400_000).toISOString();
+    const tombstones = [...(meta.tombstones ?? []).filter((t) => !(t.c === name && t.id === id) && t.at > cutoff), { c: name, id, at: new Date().toISOString() }];
+    const nextMeta = { ...meta, tombstones };
+    await db.putKV(modeRef.current, nextMeta);
+    setData((d) => ({ ...d, [name]: (d[name] as { id: string }[]).filter((r) => r.id !== id), meta: nextMeta }));
     notify();
   }, []);
 

@@ -311,6 +311,8 @@ export interface Settings {
   share: ShareConfig | null;
   /** Guided 7-day home measurement weeks (newest last). */
   measurementWeeks?: MeasurementWeek[];
+  /** Cloud backup and sync on this device (kept per device; never taken from another device). */
+  vault?: VaultConfig | null;
   updatedAt: ISOInstant;
 }
 
@@ -358,6 +360,17 @@ export interface Meta {
   lastBackupAt: ISOInstant | null;
   lastBackupMethod: string | null;
   createdAt: ISOInstant;
+  /** Records deleted on this device (only ids and when), so cloud sync doesn't bring them back. */
+  tombstones?: Tombstone[];
+}
+
+export interface Tombstone { c: CollectionName; id: ID; at: ISOInstant }
+
+/** Encrypted cloud backup and sync. The recovery key never leaves the devices. */
+export interface VaultConfig {
+  /** 32-character recovery key (Crockford base32). */
+  key: string;
+  enabledAt: ISOInstant;
 }
 
 /** Collections stored as separate object stores. */

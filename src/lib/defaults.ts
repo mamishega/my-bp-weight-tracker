@@ -41,6 +41,7 @@ export function defaultSettings(now = new Date().toISOString()): Settings {
     onboarded: false,
     share: null,
     measurementWeeks: [],
+    vault: null,
     updatedAt: now,
   };
 }
@@ -115,6 +116,7 @@ export function normaliseSettings(s: Partial<Settings> | undefined): Settings {
     },
     monitors: s.monitors ?? [],
     share: normaliseShare(s.share),
+    vault: s.vault && typeof s.vault.key === 'string' && /^[0-9A-Z]{32}$/.test(s.vault.key) ? { key: s.vault.key, enabledAt: String(s.vault.enabledAt ?? '') } : null,
     measurementWeeks: Array.isArray(s.measurementWeeks) ? s.measurementWeeks.filter((w) => w && typeof w.startDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(w.startDate)).map((w) => ({ ...w, days: Number.isInteger(w.days) && w.days >= 1 && w.days <= 14 ? w.days : 7 })) : [],
     id: 'settings',
   };

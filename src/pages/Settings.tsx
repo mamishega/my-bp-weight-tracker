@@ -9,6 +9,7 @@ import { readFileText, saveFile } from '../lib/files';
 import { buildIcs, reminderEvents } from '../lib/ics';
 import { Icon } from '../components/Icon';
 import { ImportReadingsCard } from '../components/ImportReadings';
+import { CloudBackupCard } from '../components/CloudBackup';
 import { disablePush, enablePush, isIos, pushConfigured, pushEnabledHere, pushSupported, testPush } from '../lib/push';
 import { emptyData, uid } from '../lib/defaults';
 import { deleteShare } from '../lib/share';
@@ -370,6 +371,7 @@ function StorageCard() {
       <Button variant="danger" className="mt-2" onClick={() => setDel(true)}>Delete all {mode === 'demo' ? 'demo ' : ''}data…</Button>
       <TypedConfirm open={del} onClose={() => setDel(false)} onConfirm={deleteAll} title="Delete all data on this device?" word="DELETE" confirmLabel="Delete everything">
         <p>This removes {data.sessions.length} blood pressure sessions, {data.doses.length} dose records, {data.weights.length} weight entries, {data.symptoms.length} symptoms and all other records and settings. It can’t be undone.</p>
+        {data.settings.vault && <Notice tone="info">Your encrypted cloud backup is kept and this device stops syncing. To remove the cloud copy too, use “Delete cloud backup” in Cloud backup and sync first.</Notice>}
         <BackupNowButton variant="secondary" />
       </TypedConfirm>
     </Card>
@@ -475,6 +477,7 @@ export function SettingsPage() {
         <p className="mt-2 text-sm text-slate-700">The backup is one JSON file with every record (with its ID, timestamps and time zone), your settings and full medication history. A backup only counts once the file is saved; cancelled or failed saves never update the date.</p>
         <Notice tone="warn">Backup files contain sensitive personal health information and are not encrypted. Keep them somewhere private.</Notice>
       </Card>
+      <CloudBackupCard />
       <RestoreCard />
       <ImportReadingsCard />
       <PasscodeCard />

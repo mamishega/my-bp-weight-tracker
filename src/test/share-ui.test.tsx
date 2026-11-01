@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, cleanup, waitFor } from '@testing-library/react';
+import { render, screen, cleanup, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import axe from 'axe-core';
 import { StoreProvider } from '../store/Store';
@@ -8,6 +8,7 @@ import { App } from '../App';
 import { SharedView } from '../pages/SharedView';
 import { closeStore, DB_NAMES, loadAll, lock, replaceAll } from '../db/db';
 import { buildDemoData } from '../lib/demo';
+import { _resetVaultForTests } from '../lib/vault';
 import { DEFAULT_SHARE_OPTIONS, _resetSyncForTests, createShare, deleteShare, parseShareHash, resolveShareId } from '../lib/share';
 import { installFakeShareServer, TEST_API } from './fakeShareServer';
 
@@ -24,6 +25,7 @@ beforeEach(async () => {
   vi.stubEnv('VITE_SHARE_API_URL', TEST_API);
   server = installFakeShareServer();
   _resetSyncForTests();
+  _resetVaultForTests();
   localStorage.clear();
   await closeStore('real');
   lock('real');
@@ -124,4 +126,25 @@ describe('doctor share link (doctor side)', () => {
     expect(await screen.findByText(/incomplete or damaged/i)).toBeInTheDocument();
     await waitFor(() => expect(screen.queryByText(/original readings/i)).toBeNull());
   });
+});
+
+describe('cloud backup and sync (Settings)', () => {
+  it('turns on with a recovery key, uploads an encrypted copy, and has no accessibility violations', async () => {
+    const user = userEvent.setup();
+    await replaceAll('real', buildDemoData('Australia/Sydney'));
+    await setHash('#/settings');
+    const { container } = render(<StoreProvider initialMode="real"><ToastProvider><App /></ToastProvider></StoreProvider>);
+    await screen.findByRole('heading', { name: 'Cloud backup and sync' });
+    await user.click(screen.getByRole('button', { name: 'Turn on cloud backup' }));
+    const dialog = await screen.findByRole('dialog');
+    const turnOn = within(dialog).getByRole('button', { name: 'Turn on cloud backup' });
+    expect(turnOn).toBeDisabled();
+    await user.click(within(dialog).getByLabelText(/I’ve saved my recovery key/));
+    await user.click(turnOn);
+    await waitFor(async () => expect((await loadAll('real')).settings.vault?.key).toMatch(/^[0-9A-Z]{32}$/), { timeout: 5000 });
+    await waitFor(() => expect([...server.env.SHARES.map.keys()].some((k) => k.startsWith('vault:'))).toBe(true), { timeout: 10000 });
+    expect(await screen.findByText(/Backed up and in sync/, {}, { timeout: 10000 })).toBeInTheDocument();
+    const res = await axe.run(container, { rules: { 'color-contrast': { enabled: false }, region: { enabled: false } } });
+    expect(res.violations.map((v) => `${v.id}: ${v.nodes[0].target}`)).toEqual([]);
+  }, 30000);
 });
