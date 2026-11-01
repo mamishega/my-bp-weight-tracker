@@ -14,6 +14,7 @@ const TrendsPage = lazy(() => import('./pages/Trends').then((m) => ({ default: m
 const HistoryPage = lazy(() => import('./pages/History').then((m) => ({ default: m.HistoryPage })));
 const ReportPage = lazy(() => import('./pages/Report').then((m) => ({ default: m.ReportPage })));
 const AppointmentsPage = lazy(() => import('./pages/Appointments').then((m) => ({ default: m.AppointmentsPage })));
+const MeasurementWeekPage = lazy(() => import('./pages/MeasurementWeek').then((m) => ({ default: m.MeasurementWeekPage })));
 const SharePage = lazy(() => import('./pages/Share').then((m) => ({ default: m.SharePage })));
 const SettingsPage = lazy(() => import('./pages/Settings').then((m) => ({ default: m.SettingsPage })));
 
@@ -30,6 +31,7 @@ function Page({ path }: { path: string }) {
     case '/appointments': return <AppointmentsPage />;
     case '/settings': return <SettingsPage />;
     case '/share': return <SharePage />;
+    case '/week': return <MeasurementWeekPage />;
     default: return <Notice tone="warn" title="Page not found"><a href="#/">Go to the dashboard</a></Notice>;
   }
 }

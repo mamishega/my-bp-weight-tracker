@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useStore } from '../store/Store';
 import { useRoute, navigate } from '../store/router';
 import type { SessionType, ISODate, AppData } from '../types';
-import { DoseMark, DoseLegend, Badge, Button, Card, Checkbox, Empty, Notice, PageTitle, TextField } from '../components/ui';
+import { DoseMark, DoseLegend, Badge, Button, Card, Checkbox, Empty, LinkButton, Notice, PageTitle, TextField } from '../components/ui';
 import { BPChart, WeightChart } from '../components/Charts';
 import { SESSION_LABEL, SESSION_STYLE, fmt, fmtBP, prePostComparison, sessionAverage, statsFor } from '../lib/bp';
 import { addDays, dateRange, daysBetween, formatDateShort, formatTime, isValidDate, todayIn, weekStart } from '../lib/time';
@@ -197,7 +197,7 @@ export function TrendsPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <PageTitle sub="Trends show what you recorded. They can’t show why something changed.">Trends &amp; Weekly Review</PageTitle>
+      <PageTitle sub="Trends show what you recorded. They can’t show why something changed." actions={<LinkButton href="#/week" icon="calendar">7-day measurement week</LinkButton>}>Trends &amp; Weekly Review</PageTitle>
       <Card><RangePicker key={from + to} from={from} to={to} onChange={setRange} /></Card>
       <Card title="Summary by session type" icon="list" iconTone="slate"><StatsTable data={data} from={from} to={to} /></Card>
       <Card title="Blood pressure and weight" subtitle="Aligned on a shared date axis" icon="chart">

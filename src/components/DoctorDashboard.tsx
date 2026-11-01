@@ -4,6 +4,8 @@
 // clinician. No interpretation, no alerts.
 import type { AppData, ISODate, SessionType } from '../types';
 import { Stat, DoseMark, DoseLegend } from './ui';
+import { WeekFacts, WeekTable } from '../pages/MeasurementWeek';
+import { weekEnd, weekProgress } from '../lib/week';
 import { SESSION_LABEL, SESSION_SHORT, SESSION_STYLE, fmt, fmtBP, sessionAverage, statsFor } from '../lib/bp';
 import { addDays, dateRange, formatDateShort, formatDateTiny, formatTime } from '../lib/time';
 import { dayDoseStatus, dayDoseSummary, describeSchedule, doseCounts, medFrequency, medSchedule } from '../lib/medication';
@@ -122,6 +124,20 @@ export function DoctorDashboard({ data, from, to, showSymptoms }: { data: AppDat
           </div>
         </>
       )}
+
+      {(() => {
+        const w = [...(data.settings.measurementWeeks ?? [])].reverse().find((x) => x.startDate <= to && weekEnd(x) >= from);
+        if (!w) return null;
+        const p = weekProgress(data.sessions, w, to);
+        return (
+          <>
+            <h3 className="mt-5 text-base font-semibold">Measurement week {formatDateShort(w.startDate)} – {formatDateShort(p.endDate)}{!p.finished && ` (day ${p.dayNumber} of ${w.days})`}</h3>
+            <p className="text-sm text-slate-600">The patient used a guided routine: two readings, morning before medication and evening, for 7 days.</p>
+            <div className="mt-2"><WeekFacts p={p} /></div>
+            <div className="mt-2"><WeekTable p={p} tz={tz} /></div>
+          </>
+        );
+      })()}
 
       {showSymptoms && (
         <p className="mt-4 text-sm text-slate-700">Symptom diary entries in the last 7 days: <strong>{recentSymptoms}</strong>{recentSymptoms > 0 && ' (details in the symptoms section below)'}.</p>

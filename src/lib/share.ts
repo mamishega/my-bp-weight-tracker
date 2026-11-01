@@ -188,6 +188,7 @@ export function buildShareSnapshot(data: AppData, options: ShareOptions, now = n
       weightUnit: data.settings.weightUnit,
       targets: data.settings.targets,
       weightGoal: data.settings.weightGoal,
+      measurementWeeks: (data.settings.measurementWeeks ?? []).filter((w) => w.startDate <= to && addDays(w.startDate, w.days - 1) >= from),
       onboarded: true,
       share: null,
     },

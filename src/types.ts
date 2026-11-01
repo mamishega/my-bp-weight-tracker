@@ -309,7 +309,17 @@ export interface Settings {
   onboarded: boolean;
   /** Live doctor share link, if one is active. */
   share: ShareConfig | null;
+  /** Guided 7-day home measurement weeks (newest last). */
+  measurementWeeks?: MeasurementWeek[];
   updatedAt: ISOInstant;
+}
+
+export interface MeasurementWeek {
+  id: ID;
+  startDate: ISODate;
+  /** Number of days (7). */
+  days: number;
+  createdAt: ISOInstant;
 }
 
 /** What the doctor's live link includes. */

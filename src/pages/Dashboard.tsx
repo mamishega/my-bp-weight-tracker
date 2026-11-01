@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { useStore } from '../store/Store';
+import { WeekProgressCard } from '../components/WeekProgressCard';
 import { Badge, DoseMark, Card, LinkButton, Button, PageTitle, Notice, Checkbox, cx } from '../components/ui';
 import { Icon, type IconName } from '../components/Icon';
 import { BackupNowButton, LastBackup, useNow } from '../components/Backup';
@@ -261,6 +262,7 @@ export function Dashboard() {
         </MetricCard>
       </div>
 
+      <WeekProgressCard />
       <Card title="Today’s healthy habits" subtitle="Celebrate the actions you choose — not the numbers." icon="award" iconTone="green" actions={<LinkButton href="#/symptoms?tab=habits" variant="ghost" className="min-h-10 text-sm">Choose habits</LinkButton>}>
         {habits.length === 0 ? (
           <p className="text-sm text-slate-600">Pick simple actions you’d like to do, such as a walk or preparing a meal at home.</p>

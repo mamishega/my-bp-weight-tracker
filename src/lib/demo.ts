@@ -93,6 +93,7 @@ export function buildDemoData(timeZone: string, now = new Date()): AppData {
   const sAt = zonedToInstant(addDays(today, -10), '15:00', timeZone);
   d.symptoms.push({ id: 'demo-sym', date: addDays(today, -10), occurredAt: sAt.iso, timeZone, utcOffsetMinutes: sAt.offsetMinutes, description: 'SAMPLE: mild headache', severity: 'mild', duration: '1 hour', relatedSessionId: null, relatedDoseId: null, actionsTaken: 'Rested, drank water', notes: '', createdAt: ts, updatedAt: ts });
   d.appointments.push({ id: 'demo-appt', date: addDays(today, 5), time: '10:30', clinician: 'SAMPLE GP', location: 'Sample clinic', purpose: 'Blood pressure review', notes: '', createdAt: ts, updatedAt: ts });
+  d.settings.measurementWeeks = [{ id: 'demo-week', startDate: addDays(today, -9), days: 7, createdAt: ts }];
   d.questions.push({ id: 'demo-q', text: 'SAMPLE: Should I keep taking after-medication readings?', appointmentId: 'demo-appt', resolved: false, createdAt: ts, updatedAt: ts });
   return d;
 }

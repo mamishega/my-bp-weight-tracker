@@ -13,7 +13,7 @@ if (!executablePath) {
   process.exit(2);
 }
 const axeSrc = readFileSync(new URL('../node_modules/axe-core/axe.min.js', import.meta.url), 'utf8');
-const ROUTES = ['#/', '#/add?type=morning_post', '#/medication', '#/weight', '#/symptoms', '#/symptoms?tab=lifestyle', '#/symptoms?tab=habits', '#/trends', '#/history', '#/report', '#/appointments', '#/share', '#/settings'];
+const ROUTES = ['#/', '#/add?type=morning_post', '#/medication', '#/weight', '#/symptoms', '#/symptoms?tab=lifestyle', '#/symptoms?tab=habits', '#/trends', '#/history', '#/report', '#/appointments', '#/share', '#/week', '#/week?id=demo-week', '#/settings'];
 
 const browser = await chromium.launch({ executablePath, headless: true });
 let failures = 0;

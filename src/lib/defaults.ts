@@ -40,6 +40,7 @@ export function defaultSettings(now = new Date().toISOString()): Settings {
     notificationsEnabled: false,
     onboarded: false,
     share: null,
+    measurementWeeks: [],
     updatedAt: now,
   };
 }
@@ -114,6 +115,7 @@ export function normaliseSettings(s: Partial<Settings> | undefined): Settings {
     },
     monitors: s.monitors ?? [],
     share: normaliseShare(s.share),
+    measurementWeeks: Array.isArray(s.measurementWeeks) ? s.measurementWeeks.filter((w) => w && typeof w.startDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(w.startDate)).map((w) => ({ ...w, days: Number.isInteger(w.days) && w.days >= 1 && w.days <= 14 ? w.days : 7 })) : [],
     id: 'settings',
   };
 }

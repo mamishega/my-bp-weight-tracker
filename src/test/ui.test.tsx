@@ -223,3 +223,17 @@ describe('medicine taken only when needed', () => {
     expect(saved.doses[0]).toMatchObject({ doseIndex: null, status: 'taken' });
   }, 20000);
 });
+
+describe('7-day measurement week', () => {
+  it('starts a week and shows progress on the page and the dashboard', async () => {
+    const user = userEvent.setup();
+    await renderApp('#/week');
+    await screen.findByRole('heading', { level: 1, name: /Measurement week/ });
+    await user.click(screen.getByRole('button', { name: 'Start measurement week' }));
+    expect(await screen.findByText(/Day 1 of 7/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Add morning reading/ })).toHaveAttribute('href', '#/add?type=morning_pre');
+    expect(screen.getByText(/0 of 7/)).toBeInTheDocument();
+    const saved = await loadAll('real');
+    expect(saved.settings.measurementWeeks).toHaveLength(1);
+  }, 20000);
+});
