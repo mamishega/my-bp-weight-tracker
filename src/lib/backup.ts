@@ -23,7 +23,9 @@ export function buildBackup(data: AppData, mode: DataMode, now = new Date()): Ba
     exportedAt: now.toISOString(),
     exportedTimeZone: data.settings.timeZone,
     counts,
-    data,
+    // The cloud recovery key is left out: a backup file isn't encrypted, and the
+    // key would give lasting access to the cloud copy. Keep the key separately.
+    data: { ...data, settings: { ...data.settings, vault: null } },
   };
 }
 
@@ -218,12 +220,12 @@ export function applyMerge(current: AppData, backup: BackupFile, plan: ImportPla
     (out as unknown as Record<string, unknown>)[sp.name] = list;
   }
   // The live share link on this device keeps working whichever settings are chosen.
-  if (opts.settings === 'use_backup') out.settings = { ...backup.data.settings, share: current.settings.share ?? backup.data.settings.share ?? null };
+  if (opts.settings === 'use_backup') out.settings = { ...backup.data.settings, share: current.settings.share ?? backup.data.settings.share ?? null, vault: current.settings.vault ?? null };
   out.meta = current.meta;
   return out;
 }
 
 /** Replace: the backup becomes the full dataset (backup indicator kept from current device). */
 export function applyReplace(current: AppData, backup: BackupFile): AppData {
-  return { ...backup.data, settings: { ...backup.data.settings, share: current.settings.share ?? backup.data.settings.share ?? null }, meta: { ...backup.data.meta, lastBackupAt: current.meta.lastBackupAt, lastBackupMethod: current.meta.lastBackupMethod } };
+  return { ...backup.data, settings: { ...backup.data.settings, share: current.settings.share ?? backup.data.settings.share ?? null, vault: current.settings.vault ?? null }, meta: { ...backup.data.meta, lastBackupAt: current.meta.lastBackupAt, lastBackupMethod: current.meta.lastBackupMethod } };
 }

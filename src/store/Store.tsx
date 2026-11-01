@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import type { AppData, CollectionName, Collections, DataMode, Meta, Settings } from '../types';
+import { COLLECTIONS, type AppData, type CollectionName, type Collections, type DataMode, type Meta, type Settings } from '../types';
 import * as db from '../db/db';
 import { emptyData } from '../lib/defaults';
 import { buildDemoData } from '../lib/demo';
@@ -34,6 +34,8 @@ interface StoreValue {
   saveSettings: (s: Settings) => Promise<void>;
   saveMeta: (m: Meta) => Promise<void>;
   replaceAll: (d: AppData) => Promise<void>;
+  /** Apply a cloud-sync result without overwriting anything newer saved meanwhile. */
+  applySync: (target: AppData) => Promise<void>;
   setMode: (m: DataMode) => Promise<void>;
   resetDemo: () => Promise<void>;
   reload: () => Promise<void>;
@@ -149,6 +151,47 @@ export function StoreProvider({ children, initialMode }: { children: ReactNode; 
     notify();
   }, []);
 
+  const applySync = useCallback(async (target: AppData) => {
+    const m = modeRef.current;
+    const stampOf = (r: { updatedAt?: string; createdAt?: string }) => r.updatedAt ?? r.createdAt ?? '';
+    const cur = dataRef.current;
+    const dead = new Map((target.meta.tombstones ?? []).map((t) => [`${t.c}|${t.id}`, t.at]));
+    const changes: { name: CollectionName; put: { id: string }[]; del: string[] }[] = [];
+    for (const name of COLLECTIONS) {
+      const curList = cur[name] as unknown as { id: string; updatedAt?: string; createdAt?: string }[];
+      const byId = new Map(curList.map((r) => [r.id, r]));
+      // Only records that are new here, or newer than the copy here: an edit saved meanwhile is never reverted.
+      const put = (target[name] as unknown as { id: string; updatedAt?: string; createdAt?: string }[]).filter((r) => {
+        const c = byId.get(r.id);
+        return !c || (stampOf(r) > stampOf(c));
+      });
+      // Only records deleted elsewhere after their last edit: a record added meanwhile is never removed.
+      const del = curList.filter((r) => { const at = dead.get(`${name}|${r.id}`); return !!at && stampOf(r) <= at; }).map((r) => r.id);
+      if (put.length || del.length) changes.push({ name, put, del });
+    }
+    for (const c of changes) {
+      if (c.put.length) await db.putRecords(m, c.name, c.put as never);
+      for (const id of c.del) await db.deleteRecord(m, c.name, id);
+    }
+    const settingsNewer = target.settings.updatedAt > cur.settings.updatedAt;
+    if (settingsNewer) await db.putKV(m, { ...target.settings, vault: dataRef.current.settings.vault ?? null, notificationsEnabled: dataRef.current.settings.notificationsEnabled });
+    const tombstones = new Map([...(dataRef.current.meta.tombstones ?? []), ...(target.meta.tombstones ?? [])].map((t) => [`${t.c}|${t.id}`, t]));
+    const meta = { ...dataRef.current.meta, tombstones: [...tombstones.values()] };
+    await db.putKV(m, meta);
+    setData((d) => {
+      const next = { ...d, meta } as AppData;
+      for (const c of changes) {
+        const map = new Map((d[c.name] as unknown as { id: string }[]).map((r) => [r.id, r]));
+        for (const r of c.put) map.set(r.id, r);
+        for (const id of c.del) map.delete(id);
+        (next as unknown as Record<string, unknown>)[c.name] = [...map.values()];
+      }
+      if (settingsNewer) next.settings = { ...target.settings, vault: d.settings.vault ?? null, notificationsEnabled: d.settings.notificationsEnabled };
+      return next;
+    });
+    notify();
+  }, []);
+
   const setMode = useCallback(async (m: DataMode) => {
     try {
       localStorage.setItem(MODE_KEY, m);
@@ -216,8 +259,8 @@ export function StoreProvider({ children, initialMode }: { children: ReactNode; 
   }, [lockEnabled, lockNow]);
 
   const value = useMemo<StoreValue>(
-    () => ({ data, mode, loading, error, locked, lockEnabled, unlock, lockNow, enableLock, disableLock, eraseLockedData, put, putMany, remove, saveSettings, saveMeta, replaceAll, setMode, resetDemo, reload: () => load(modeRef.current) }),
-    [data, mode, loading, error, locked, lockEnabled, unlock, lockNow, enableLock, disableLock, eraseLockedData, put, putMany, remove, saveSettings, saveMeta, replaceAll, setMode, resetDemo, load],
+    () => ({ data, mode, loading, error, locked, lockEnabled, unlock, lockNow, enableLock, disableLock, eraseLockedData, put, putMany, remove, saveSettings, saveMeta, replaceAll, applySync, setMode, resetDemo, reload: () => load(modeRef.current) }),
+    [data, mode, loading, error, locked, lockEnabled, unlock, lockNow, enableLock, disableLock, eraseLockedData, put, putMany, remove, saveSettings, saveMeta, replaceAll, applySync, setMode, resetDemo, load],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

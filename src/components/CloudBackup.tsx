@@ -1,6 +1,7 @@
 import { useState, useSyncExternalStore } from 'react';
 import { useStore } from '../store/Store';
-import type { AppData } from '../types';
+import { COLLECTIONS, type AppData } from '../types';
+import { emptyData } from '../lib/defaults';
 import { Badge, Button, Card, Checkbox, Modal, Notice, TextField, TypedConfirm, useToast } from './ui';
 import { saveFile } from '../lib/files';
 import { relativeTime, shareAvailable } from '../lib/share';
@@ -23,7 +24,7 @@ function KeyBox({ k }: { k: string }) {
 const count = (d: Pick<AppData, 'sessions' | 'doses' | 'weights'>) => `${d.sessions.length} reading sessions, ${d.doses.length} dose records, ${d.weights.length} weights`;
 
 export function CloudBackupCard() {
-  const { data, mode, saveSettings, replaceAll } = useStore();
+  const { data, mode, saveSettings, replaceAll, applySync } = useStore();
   const toast = useToast();
   const status = useSyncExternalStore(subscribeVault, getVaultStatus);
   const cfg = data.settings.vault;
@@ -38,7 +39,7 @@ export function CloudBackupCard() {
 
   if (mode === 'demo' || !shareAvailable()) return null;
   const close = () => { setFlow(null); setError(null); setFound(null); setInput(''); setSaved(false); setBusy(false); };
-  const syncNow = () => syncVault(() => data, (d) => replaceAll(d));
+  const syncNow = () => syncVault(() => data, (d) => applySync(d));
 
   const startNew = () => { setNewKey(generateRecoveryKey()); setFlow('new'); };
   const confirmNew = async () => {
@@ -69,7 +70,7 @@ export function CloudBackupCard() {
     const p = found.remote.payload;
     const next: AppData = how === 'merge'
       ? joinData(data, p, vault)
-      : { ...(p.data as Omit<AppData, 'meta'>), settings: { ...p.data.settings, vault, notificationsEnabled: data.settings.notificationsEnabled }, meta: { ...data.meta, tombstones: p.tombstones } };
+      : { ...emptyData(), ...(p.data as Omit<AppData, 'meta'>), ...Object.fromEntries(COLLECTIONS.map((c) => [c, (p.data as Partial<AppData>)[c] ?? []])), settings: { ...p.data.settings, vault, notificationsEnabled: data.settings.notificationsEnabled }, meta: { ...data.meta, tombstones: p.tombstones } };
     await replaceAll(next);
     toast(how === 'merge' ? 'Connected. Records from both are now combined and kept in step.' : 'Connected. This device now has the records from your cloud backup.');
     close();

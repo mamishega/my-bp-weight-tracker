@@ -68,11 +68,22 @@ self.addEventListener('push', (event) => {
         const res = await cache.match(new URL('push-schedule.json', self.registration.scope).href);
         if (res) {
           const meta = await res.json();
-          const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: meta.tz, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date()).map((x) => [x.type, x.value]));
+          const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: meta.tz, year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date()).map((x) => [x.type, x.value]));
           const mins = Number(p.hour) * 60 + Number(p.minute);
+          const today = Date.UTC(Number(p.year), Number(p.month) - 1, Number(p.day)) / 86400000;
+          const weekday = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(p.weekday);
+          const dayOf = (iso) => Date.UTC(Number(iso.slice(0, 4)), Number(iso.slice(5, 7)) - 1, Number(iso.slice(8, 10))) / 86400000;
           const due = (meta.items || []).filter((x) => {
             const [h, m] = x.t.split(':').map(Number);
-            return (mins - (h * 60 + m) + 1440) % 1440 <= 6;
+            const diff = (mins - (h * 60 + m) + 1440) % 1440;
+            if (diff > 6) return false;
+            const crossed = diff > mins; // scheduled just before midnight
+            const day = crossed ? today - 1 : today;
+            const wd = crossed ? (weekday + 6) % 7 : weekday;
+            if (x.d && !x.d.includes(wd)) return false;
+            if (x.n && x.s && ((day - dayOf(x.s)) < 0 || (day - dayOf(x.s)) % x.n !== 0)) return false;
+            if (x.u && day > dayOf(x.u)) return false;
+            return true;
           });
           if (due.length === 1) ({ title, body, url } = due[0]);
           else if (due.length > 1) {

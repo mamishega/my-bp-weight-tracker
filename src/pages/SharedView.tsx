@@ -25,6 +25,8 @@ export function SharedView({ link }: { link: ParsedShareLink }) {
   const [days, setDays] = useState<number | null>(null);
   const [now, setNow] = useState(Date.now());
   const busy = useRef(false);
+  const kindRef = useRef<State['kind']>('loading');
+  kindRef.current = state.kind;
   const pinKey = `bpt-share-pin:${link.key}`;
   const pinRef = useRef<string | null>((() => {
     try {
@@ -87,9 +89,10 @@ export function SharedView({ link }: { link: ParsedShareLink }) {
     void load();
     const t = setInterval(() => {
       setNow(Date.now());
-      if (document.visibilityState === 'visible') void load();
+      // Don't poll while the PIN screen is up (it would clear its message, and needs the doctor anyway).
+      if (document.visibilityState === 'visible' && kindRef.current !== 'pin') void load();
     }, REFRESH_MS);
-    const onVis = () => document.visibilityState === 'visible' && void load();
+    const onVis = () => document.visibilityState === 'visible' && kindRef.current !== 'pin' && void load();
     document.addEventListener('visibilitychange', onVis);
     window.addEventListener('online', onVis);
     return () => {

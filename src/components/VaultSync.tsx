@@ -9,12 +9,12 @@ import { shareAvailable } from '../lib/share';
  * minutes while it's visible (to pick up changes from other devices).
  */
 export function VaultSync() {
-  const { data, mode, locked, loading, replaceAll } = useStore();
+  const { data, mode, locked, loading, applySync } = useStore();
   const active = mode === 'real' && !locked && !loading && !!data.settings.vault && shareAvailable();
   const dataRef = useRef(data);
   dataRef.current = data;
   const run = useRef(() => {});
-  run.current = () => void syncVault(() => dataRef.current, (d) => replaceAll(d));
+  run.current = () => void syncVault(() => dataRef.current, (d) => applySync(d));
 
   useEffect(() => {
     if (!active || !changedSinceSync(data)) return;

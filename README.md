@@ -175,7 +175,7 @@ Limitations: the free KV tier allows 1,000 writes a day. That is far more than o
 
 ## Testing
 
-`npm test` runs 278 tests (all passing). Main areas:
+`npm test` runs 285 tests (all passing). Main areas:
 
 | Area | File |
 |---|---|
