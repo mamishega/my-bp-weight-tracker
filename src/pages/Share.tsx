@@ -3,7 +3,7 @@ import { useStore } from '../store/Store';
 import type { ShareConfig, ShareOptions } from '../types';
 import { Badge, Button, Card, Checkbox, Modal, Notice, PageTitle, SelectField, TextField, useToast } from '../components/ui';
 import { Icon } from '../components/Icon';
-import { DEFAULT_SHARE_OPTIONS, SHARE_EXPIRY_DAYS, SHARE_WINDOWS, buildShareLink, createShare, deleteShare, getSyncStatus, relativeTime, requestSync, SECRET_RE, slugifyName, shareAvailable, subscribeSync, type SyncStatus } from '../lib/share';
+import { DEFAULT_SHARE_OPTIONS, SHARE_EXPIRY_DAYS, SHARE_WINDOWS, buildShareLink, createShare, deleteShare, fetchShareStatus, getSyncStatus, PIN_RE, relativeTime, requestSync, SECRET_RE, slugifyName, type ShareStatus, shareAvailable, subscribeSync, type SyncStatus } from '../lib/share';
 
 function useNow(everyMs = 30_000) {
   const [now, setNow] = useState(Date.now());
@@ -61,6 +61,44 @@ function LinkNameField({ value, onChange, hint }: { value: string; onChange: (v:
   );
 }
 
+function PinField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <TextField
+      label="PIN for your doctor"
+      optional
+      inputMode="numeric"
+      autoComplete="off"
+      maxLength={8}
+      value={value}
+      onChange={(e) => onChange(e.target.value.replace(/\D/g, ''))}
+      hint="4 to 8 digits. Tell it to your doctor separately (in person or by phone), not in the same message as the link. Without it the link can’t be opened, and 10 wrong tries lock it for an hour."
+      error={value && !PIN_RE.test(value) ? 'Use 4 to 8 digits.' : null}
+    />
+  );
+}
+
+function ViewedLine({ cfg, now }: { cfg: ShareConfig; now: number }) {
+  const [st, setSt] = useState<ShareStatus | null>(null);
+  useEffect(() => {
+    let alive = true;
+    const load = () => fetchShareStatus(cfg).then((s) => alive && setSt(s)).catch(() => undefined);
+    void load();
+    const t = setInterval(load, 60_000);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, [cfg]);
+  if (!st) return null;
+  return (
+    <p className="text-sm text-slate-700">
+      <Icon name="clock" className="mr-1 inline h-4 w-4 align-[-3px] text-slate-500" />
+      {st.lastViewedAt ? <>Last opened <strong>{relativeTime(st.lastViewedAt, now)}</strong> · {st.views} visit{st.views === 1 ? '' : 's'} so far</> : 'Not opened yet'}
+      <span className="text-slate-500"> (your own previews aren’t counted)</span>
+    </p>
+  );
+}
+
 function StatusLine({ s, now }: { s: SyncStatus; now: number }) {
   if (s.state === 'uploading') return <Badge tone="info" icon="refresh">Updating link…</Badge>;
   if (s.state === 'offline') return <Badge tone="warn" icon="wifiOff">{s.message ?? 'Waiting for a connection'}</Badge>;
@@ -80,6 +118,8 @@ function ActiveShare({ cfg }: { cfg: ShareConfig }) {
   const [confirm, setConfirm] = useState<null | 'stop' | 'renew'>(null);
   const [busy, setBusy] = useState(false);
   const [nameDraft, setNameDraft] = useState(cfg.linkName);
+  const [pinDraft, setPinDraft] = useState(cfg.pin ?? '');
+  const [showPin, setShowPin] = useState(false);
   const link = buildShareLink(cfg);
   const legacy = !SECRET_RE.test(cfg.key);
   const expires = new Date(cfg.expiresAt);
@@ -101,6 +141,11 @@ function ActiveShare({ cfg }: { cfg: ShareConfig }) {
       /* cancelled */
     }
   };
+  const savePin = async (pin: string | null) => {
+    await saveSettings({ ...data.settings, share: { ...cfg, pin } });
+    setPinDraft(pin ?? '');
+    toast(pin ? 'PIN saved. The link will ask for it within a minute. Tell your doctor the PIN separately.' : 'PIN removed. The link opens without a PIN.');
+  };
   const saveName = async () => {
     await saveSettings({ ...data.settings, share: { ...cfg, linkName: slugifyName(nameDraft) } });
     setNameDraft(slugifyName(nameDraft));
@@ -116,7 +161,7 @@ function ActiveShare({ cfg }: { cfg: ShareConfig }) {
       await deleteShare(cfg);
       if (thenRenew) {
         const span = Math.round((Date.parse(cfg.expiresAt) - Date.parse(cfg.createdAt)) / 86_400_000);
-        const next = await createShare(data, cfg.options, SHARE_EXPIRY_DAYS.find((d) => d >= span) ?? 90, cfg.linkName || cfg.options.displayName);
+        const next = await createShare(data, cfg.options, SHARE_EXPIRY_DAYS.find((d) => d >= span) ?? 90, cfg.linkName || cfg.options.displayName, cfg.pin ?? null);
         await saveSettings({ ...data.settings, share: next });
         toast('New link created. The old link no longer works.');
       } else {
@@ -140,7 +185,7 @@ function ActiveShare({ cfg }: { cfg: ShareConfig }) {
           <div className="flex flex-wrap gap-2">
             <Button variant="primary" icon="copy" onClick={copy}>Copy link</Button>
             {typeof navigator !== 'undefined' && 'share' in navigator && <Button icon="share" onClick={shareNative}>Share…</Button>}
-            <a href={link} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 font-medium text-slate-800 no-underline hover:bg-slate-50">
+            <a href={`${link}?preview=1`} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 font-medium text-slate-800 no-underline hover:bg-slate-50">
               <Icon name="file" className="h-4 w-4" /> Preview what your doctor sees<span className="sr-only"> (opens in a new tab)</span>
             </a>
           </div>
@@ -160,6 +205,18 @@ function ActiveShare({ cfg }: { cfg: ShareConfig }) {
             <div className="flex flex-wrap items-end gap-2">
               <div className="min-w-60 flex-1"><LinkNameField value={nameDraft} onChange={setNameDraft} hint="Only a label. Changing it doesn’t break links you’ve already sent." /></div>
               <Button disabled={slugifyName(nameDraft) === cfg.linkName} onClick={saveName}>Save name</Button>
+            </div>
+          )}
+          <ViewedLine cfg={cfg} now={now} />
+          {!legacy && (
+            <div className="rounded-lg bg-slate-50 p-3 ring-1 ring-slate-200">
+              <p className="mb-2 font-semibold text-slate-800">PIN {cfg.pin ? <Badge tone="ok" icon="shield">On</Badge> : <Badge>Off</Badge>}</p>
+              {cfg.pin && <p className="mb-2 text-sm text-slate-700">Your doctor needs this PIN: <strong className="font-mono">{showPin ? cfg.pin : '•'.repeat(cfg.pin.length)}</strong> <button type="button" className="ml-1 text-sm font-medium text-teal-800 underline" onClick={() => setShowPin((v) => !v)}>{showPin ? 'Hide' : 'Show'}</button></p>}
+              <div className="flex flex-wrap items-end gap-2">
+                <div className="min-w-60 flex-1"><PinField value={pinDraft} onChange={setPinDraft} /></div>
+                <Button disabled={!PIN_RE.test(pinDraft) || pinDraft === cfg.pin} onClick={() => savePin(pinDraft)}>{cfg.pin ? 'Change PIN' : 'Add PIN'}</Button>
+                {cfg.pin && <Button variant="ghost" onClick={() => savePin(null)}>Remove PIN</Button>}
+              </div>
             </div>
           )}
           {expired ? (
@@ -202,13 +259,14 @@ function CreateShare() {
   const [opts, setOpts] = useState<ShareOptions>(DEFAULT_SHARE_OPTIONS);
   const [days, setDays] = useState(90);
   const [linkName, setLinkName] = useState<string | null>(null); // null = follow the display name
+  const [pin, setPin] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const create = async () => {
     setBusy(true);
     setError(null);
     try {
-      const cfg = await createShare(data, opts, days, linkName ?? opts.displayName);
+      const cfg = await createShare(data, opts, days, linkName ?? opts.displayName, PIN_RE.test(pin) ? pin : null);
       await saveSettings({ ...data.settings, share: cfg });
       toast('Live link created. Copy it and send it to your doctor.');
     } catch (e) {
@@ -223,6 +281,7 @@ function CreateShare() {
       <div className="mt-4 max-w-md">
         <LinkNameField value={linkName ?? slugifyName(opts.displayName)} onChange={setLinkName} />
       </div>
+      <div className="mt-4 max-w-md"><PinField value={pin} onChange={setPin} /></div>
       <div className="mt-4 max-w-xs">
         <SelectField label="Link stops working after" value={String(days)} onChange={(e) => setDays(Number(e.target.value))}>
           {SHARE_EXPIRY_DAYS.map((d) => <option key={d} value={d}>{d} days</option>)}
@@ -230,7 +289,7 @@ function CreateShare() {
       </div>
       {error && <div className="mt-3"><Notice tone="danger" role="alert">{error}</Notice></div>}
       <div className="mt-4">
-        <Button variant="primary" icon="link" disabled={busy} onClick={create}>{busy ? 'Creating link…' : 'Create link'}</Button>
+        <Button variant="primary" icon="link" disabled={busy || (pin !== '' && !PIN_RE.test(pin))} onClick={create}>{busy ? 'Creating link…' : 'Create link'}</Button>
       </div>
     </Card>
   );

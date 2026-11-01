@@ -95,6 +95,21 @@ describe('doctor share link (doctor side)', () => {
     expect(res.violations.map((v) => v.id)).toEqual([]);
   }, 20000);
 
+  it('asks for the PIN, explains a wrong one, then shows the records', async () => {
+    const user = userEvent.setup();
+    const cfg = await createShare(buildDemoData('Australia/Sydney'), DEFAULT_SHARE_OPTIONS, 30, '', '2468');
+    render(<SharedView link={{ id: null, key: cfg.key, name: null }} />);
+    await screen.findByRole('heading', { name: 'Enter the PIN' });
+    expect(screen.queryByText(/Original readings/)).toBeNull();
+    await user.type(screen.getByLabelText(/^PIN/), '1111');
+    await user.click(screen.getByRole('button', { name: 'Open records' }));
+    expect(await screen.findByText(/That PIN isn’t right/)).toBeInTheDocument();
+    await user.clear(screen.getByLabelText(/^PIN/));
+    await user.type(screen.getByLabelText(/^PIN/), '2468');
+    await user.click(screen.getByRole('button', { name: 'Open records' }));
+    expect(await screen.findByText(/last updated by the patient/i, {}, { timeout: 5000 })).toBeInTheDocument();
+  });
+
   it('says so when the link was turned off', async () => {
     const cfg = await createShare(buildDemoData('Australia/Sydney'), DEFAULT_SHARE_OPTIONS, 30);
     await deleteShare(cfg);

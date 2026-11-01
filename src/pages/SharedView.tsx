@@ -3,7 +3,7 @@
 // in memory with the key from the link's #fragment, and refreshed regularly.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ISODate, SessionType } from '../types';
-import { Button, Notice } from '../components/ui';
+import { Button, Notice, TextField } from '../components/ui';
 import { Logo } from '../components/Icon';
 import { BPChart, WeightChart } from '../components/Charts';
 import { DoctorDashboard } from '../components/DoctorDashboard';
@@ -17,6 +17,7 @@ const ALL: Record<SessionType, boolean> = { morning_pre: true, morning_post: tru
 type State =
   | { kind: 'loading' }
   | { kind: 'error'; title: string; detail: string; retry: boolean }
+  | { kind: 'pin'; message: string | null; locked: boolean }
   | { kind: 'ready'; snapshot: ShareSnapshot; updatedAt: number; expiresAt: number; fetchedAt: number; refreshError: boolean };
 
 export function SharedView({ link }: { link: ParsedShareLink }) {
@@ -24,6 +25,14 @@ export function SharedView({ link }: { link: ParsedShareLink }) {
   const [days, setDays] = useState<number | null>(null);
   const [now, setNow] = useState(Date.now());
   const busy = useRef(false);
+  const pinKey = `bpt-share-pin:${link.key}`;
+  const pinRef = useRef<string | null>((() => {
+    try {
+      return sessionStorage.getItem(pinKey);
+    } catch {
+      return null;
+    }
+  })());
 
   const load = useCallback(async () => {
     if (busy.current) return;
@@ -31,9 +40,25 @@ export function SharedView({ link }: { link: ParsedShareLink }) {
     try {
       if (!shareApiBase()) throw new ShareHttpError(0, 'not configured');
       const id = await resolveShareId(link);
-      const r = await fetchShared(id, link.key);
+      const r = await fetchShared(id, link.key, { pin: pinRef.current, preview: link.preview });
       setState({ kind: 'ready', ...r, fetchedAt: Date.now(), refreshError: false });
     } catch (e) {
+      if (e instanceof ShareHttpError && (e.code === 'pin-required' || e.code === 'pin-wrong' || e.code === 'pin-locked')) {
+        const hadPin = !!pinRef.current;
+        pinRef.current = null;
+        try {
+          sessionStorage.removeItem(pinKey);
+        } catch {
+          /* ignore */
+        }
+        const message = e.code === 'pin-locked'
+          ? `Too many wrong PINs. Try again after ${new Date(e.info.retryAt ?? Date.now()).toLocaleTimeString('en-AU', { timeStyle: 'short' })}.`
+          : e.code === 'pin-wrong'
+            ? `That PIN isn’t right.${e.info.remaining != null ? ` ${e.info.remaining} ${e.info.remaining === 1 ? 'try' : 'tries'} left before the link locks for an hour.` : ''}`
+            : hadPin ? 'The PIN for this link has changed. Ask the patient for the new PIN.' : null;
+        setState({ kind: 'pin', message, locked: e.code === 'pin-locked' });
+        return;
+      }
       setState((prev) => {
         if (prev.kind === 'ready' && !(e instanceof ShareHttpError && e.status === 404)) return { ...prev, refreshError: true };
         if (e instanceof ShareHttpError && e.status === 404) return { kind: 'error', title: 'This link has been turned off or has expired', detail: 'Ask the patient to send a new link.', retry: false };
@@ -45,7 +70,18 @@ export function SharedView({ link }: { link: ParsedShareLink }) {
     } finally {
       busy.current = false;
     }
-  }, [link]);
+  }, [link, pinKey]);
+
+  const submitPin = (pin: string) => {
+    pinRef.current = pin;
+    try {
+      sessionStorage.setItem(pinKey, pin);
+    } catch {
+      /* ignore */
+    }
+    setState({ kind: 'loading' });
+    void load();
+  };
 
   useEffect(() => {
     void load();
@@ -79,9 +115,27 @@ export function SharedView({ link }: { link: ParsedShareLink }) {
             {state.retry && <div className="mt-3"><Button icon="refresh" onClick={() => void load()}>Try again</Button></div>}
           </div>
         )}
+        {state.kind === 'pin' && <PinPrompt message={state.message} locked={state.locked} onSubmit={submitPin} />}
         {state.kind === 'ready' && <Ready state={state} days={days} setDays={setDays} now={now} onRefresh={() => void load()} />}
       </div>
     </main>
+  );
+}
+
+function PinPrompt({ message, locked, onSubmit }: { message: string | null; locked: boolean; onSubmit: (pin: string) => void }) {
+  const [pin, setPin] = useState('');
+  const valid = /^\d{4,8}$/.test(pin);
+  return (
+    <div className="mx-auto max-w-md rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+      <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-600"><Logo className="h-7 w-7" /> My BP &amp; Weight Tracker</div>
+      <h1 className="mb-2 text-xl font-bold">Enter the PIN</h1>
+      <p className="mb-4 text-slate-700">The patient protected these records with a PIN. They should have told you it separately from the link.</p>
+      {message && <div className="mb-4"><Notice tone="warn" role="alert">{message}</Notice></div>}
+      <form onSubmit={(e) => { e.preventDefault(); if (valid && !locked) onSubmit(pin); }} className="flex flex-col gap-3">
+        <TextField label="PIN" inputMode="numeric" autoComplete="off" maxLength={8} value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))} hint="4 to 8 digits" disabled={locked} />
+        <Button variant="primary" type="submit" disabled={!valid || locked}>Open records</Button>
+      </form>
+    </div>
   );
 }
 

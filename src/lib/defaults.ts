@@ -91,7 +91,7 @@ export function normaliseShare(v: unknown): ShareConfig | null {
     if (typeof o[k] === typeof DEFAULT_SHARE_OPTIONS[k]) (options as Record<string, unknown>)[k] = o[k];
   }
   if (![30, 90, 180, 365].includes(options.windowDays)) options.windowDays = 90;
-  return { id: c.id!, token: c.token!, key: c.key!, linkName: typeof c.linkName === 'string' ? c.linkName : '', createdAt: str(c.createdAt) ? c.createdAt! : c.expiresAt!, expiresAt: c.expiresAt!, options };
+  return { id: c.id!, token: c.token!, key: c.key!, linkName: typeof c.linkName === 'string' ? c.linkName : '', pin: typeof c.pin === 'string' && /^\d{4,8}$/.test(c.pin) ? c.pin : null, createdAt: str(c.createdAt) ? c.createdAt! : c.expiresAt!, expiresAt: c.expiresAt!, options };
 }
 
 /** Fill in any settings fields missing from older saved/imported data. */

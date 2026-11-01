@@ -80,11 +80,13 @@ export async function shareIdFromSecret(secret: string): Promise<string> {
   return toUrl(toB64(new Uint8Array(buf))).slice(0, 22);
 }
 
-async function importKey(k: string): Promise<CryptoKey> {
+export const PIN_RE = /^\d{4,8}$/;
+
+async function importKey(k: string, pin?: string | null): Promise<CryptoKey> {
   if (SECRET_RE.test(k)) {
     const base = await crypto.subtle.importKey('raw', fromB64(fromUrl(k)), 'HKDF', false, ['deriveKey']);
     return crypto.subtle.deriveKey(
-      { name: 'HKDF', hash: 'SHA-256', salt: enc.encode('my-bp-weight-tracker-share-v2'), info: enc.encode('aes-256-gcm') },
+      { name: 'HKDF', hash: 'SHA-256', salt: enc.encode('my-bp-weight-tracker-share-v2'), info: enc.encode(pin ? `aes-256-gcm:pin:${pin}` : 'aes-256-gcm') },
       base,
       { name: 'AES-GCM', length: 256 },
       false,
@@ -98,9 +100,27 @@ async function importKey(k: string): Promise<CryptoKey> {
 
 export interface SealedShare { v: 1; iv: string; ct: string }
 
+/**
+ * Proof that the viewer knows the PIN, sent to the relay, which only stores
+ * its SHA-256 hash and releases the encrypted data only for a matching proof
+ * (10 wrong tries lock the link for an hour).
+ */
+export async function pinProof(secret: string, pin: string): Promise<string> {
+  const base = await crypto.subtle.importKey('raw', fromB64(fromUrl(secret)), 'HKDF', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits({ name: 'HKDF', hash: 'SHA-256', salt: enc.encode('my-bp-weight-tracker-share-v2'), info: enc.encode(`read-proof:${pin}`) }, base, 256);
+  return toUrl(toB64(new Uint8Array(bits)));
+}
+async function sha256Hex(text: string): Promise<string> {
+  const buf = await crypto.subtle.digest('SHA-256', enc.encode(text));
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+async function readHashFor(cfg: Pick<ShareConfig, 'key' | 'pin'>): Promise<string | null> {
+  return cfg.pin && SECRET_RE.test(cfg.key) ? sha256Hex(await pinProof(cfg.key, cfg.pin)) : null;
+}
+
 /** Encrypt; the share id is bound as associated data so blobs can't be swapped between links. */
-export async function encryptSnapshot(snapshot: ShareSnapshot, keyB64: string, id: string): Promise<SealedShare> {
-  const key = await importKey(keyB64);
+export async function encryptSnapshot(snapshot: ShareSnapshot, keyB64: string, id: string, pin?: string | null): Promise<SealedShare> {
+  const key = await importKey(keyB64, pin);
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv, additionalData: new TextEncoder().encode(id) }, key, new TextEncoder().encode(JSON.stringify(snapshot)));
   return { v: 1, iv: toB64(iv), ct: toB64(new Uint8Array(ct)) };
@@ -114,10 +134,10 @@ export class ShareDecryptError extends Error {
   }
 }
 
-export async function decryptSnapshot(sealed: { iv: string; ct: string }, keyB64: string, id: string): Promise<ShareSnapshot> {
+export async function decryptSnapshot(sealed: { iv: string; ct: string }, keyB64: string, id: string, pin?: string | null): Promise<ShareSnapshot> {
   let snap: ShareSnapshot;
   try {
-    const key = await importKey(keyB64);
+    const key = await importKey(keyB64, pin);
     const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: fromB64(sealed.iv), additionalData: new TextEncoder().encode(id) }, key, fromB64(sealed.ct));
     snap = JSON.parse(new TextDecoder().decode(pt)) as ShareSnapshot;
   } catch {
@@ -177,8 +197,8 @@ export function buildShareSnapshot(data: AppData, options: ShareOptions, now = n
 }
 
 /** Content fingerprint ignoring the generation time, to skip uploads when nothing changed. */
-export async function snapshotFingerprint(s: ShareSnapshot): Promise<string> {
-  const text = JSON.stringify({ ...s, generatedAt: '' });
+export async function snapshotFingerprint(s: ShareSnapshot, pin: string | null = null): Promise<string> {
+  const text = JSON.stringify({ ...s, generatedAt: '', pin });
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
   return toB64(new Uint8Array(buf));
 }
@@ -220,19 +240,20 @@ export function buildShareLink(cfg: Pick<ShareConfig, 'id' | 'key' | 'linkName'>
   return `${base}#/shared/${cfg.id}?k=${cfg.key}`;
 }
 
-export interface ParsedShareLink { id: string | null; key: string; name: string | null }
+export interface ParsedShareLink { id: string | null; key: string; name: string | null; preview?: boolean }
 
 /** Parse a link's #fragment. Short links need resolveShareId() for the id. */
 export function parseShareHash(hash: string): ParsedShareLink | null {
-  const short = hash.match(/^#\/d\/(?:([^/]*)\/)?([A-Za-z0-9_-]{16})[^A-Za-z0-9_-]*$/);
+  const short = hash.match(/^#\/d\/(?:([^/?]*)\/)?([A-Za-z0-9_-]{16})[.,;:!)\]]*(?:\?([^#]*))?$/);
   if (short) {
+    const preview = new URLSearchParams(short[3] ?? '').has('preview');
     let name: string | null = null;
     try {
       name = short[1] ? decodeURIComponent(short[1]) : null;
     } catch {
       name = short[1] ?? null;
     }
-    return { id: null, key: short[2], name };
+    return { id: null, key: short[2], name, ...(preview ? { preview } : {}) };
   }
   const m = hash.match(/^#\/shared\/([A-Za-z0-9_-]{22})\?(.*)$/);
   if (!m) return null;
@@ -264,16 +285,16 @@ export function deviceId(): string {
 
 // ---------- API ----------
 export class ShareHttpError extends Error {
-  constructor(public status: number, message: string) {
+  constructor(public status: number, message: string, public code?: string, public info: { remaining?: number; retryAt?: number } = {}) {
     super(message);
     this.name = 'ShareHttpError';
   }
 }
 
-async function call<T>(method: string, path: string, body?: unknown, token?: string): Promise<T> {
+async function call<T>(method: string, path: string, body?: unknown, token?: string, extraHeaders: Record<string, string> = {}): Promise<T> {
   const res = await fetch(`${shareApiBase()}${path}`, {
     method,
-    headers: { ...(body ? { 'Content-Type': 'application/json' } : {}), ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    headers: { ...(body ? { 'Content-Type': 'application/json' } : {}), ...(token ? { Authorization: `Bearer ${token}` } : {}), ...extraHeaders },
     body: body ? JSON.stringify(body) : undefined,
     cache: 'no-store',
     credentials: 'omit',
@@ -281,25 +302,34 @@ async function call<T>(method: string, path: string, body?: unknown, token?: str
   });
   if (!res.ok) {
     let msg = `Share server error (${res.status})`;
+    let info: { error?: string; code?: string; remaining?: number; retryAt?: number } = {};
     try {
-      msg = ((await res.json()) as { error?: string }).error ?? msg;
+      info = (await res.json()) as typeof info;
+      msg = info.error ?? msg;
     } catch {
       /* ignore */
     }
-    throw new ShareHttpError(res.status, msg);
+    throw new ShareHttpError(res.status, msg, info.code, info);
   }
   return (res.status === 204 ? null : await res.json()) as T;
 }
 
 /** Create a new short link and upload the first snapshot. */
-export async function createShare(data: AppData, options: ShareOptions, expiresInDays: number, linkName = ''): Promise<ShareConfig> {
+export async function createShare(data: AppData, options: ShareOptions, expiresInDays: number, linkName = '', pin: string | null = null): Promise<ShareConfig> {
   const secret = generateShareSecret();
   const id = await shareIdFromSecret(secret);
   const snap = buildShareSnapshot(data, options);
-  const created = await call<{ id: string; token: string; updatedAt: number; expiresAt: number }>('POST', '/v1/shares', { ...(await encryptSnapshot(snap, secret, id)), id, expiresInDays, writer: deviceId() });
-  const config: ShareConfig = { id, token: created.token, key: secret, linkName: slugifyName(linkName), createdAt: new Date(created.updatedAt).toISOString(), expiresAt: new Date(created.expiresAt).toISOString(), options };
-  rememberUpload(config.id, await snapshotFingerprint(snap));
+  const p = pin && PIN_RE.test(pin) ? pin : null;
+  const created = await call<{ id: string; token: string; updatedAt: number; expiresAt: number }>('POST', '/v1/shares', { ...(await encryptSnapshot(snap, secret, id, p)), id, expiresInDays, writer: deviceId(), readHash: await readHashFor({ key: secret, pin: p }) });
+  const config: ShareConfig = { id, token: created.token, key: secret, linkName: slugifyName(linkName), pin: p, createdAt: new Date(created.updatedAt).toISOString(), expiresAt: new Date(created.expiresAt).toISOString(), options };
+  rememberUpload(config.id, await snapshotFingerprint(snap, p));
   return config;
+}
+
+export interface ShareStatus { updatedAt: number; expiresAt: number; lastViewedAt: number | null; views: number; pin: boolean }
+/** Owner-only: when the link was last opened (not counting previews) and how often. */
+export async function fetchShareStatus(cfg: ShareConfig): Promise<ShareStatus> {
+  return call<ShareStatus>('GET', `/v1/shares/${cfg.id}/status`, undefined, cfg.token);
 }
 
 export async function deleteShare(config: ShareConfig): Promise<void> {
@@ -319,9 +349,12 @@ export async function deleteShare(config: ShareConfig): Promise<void> {
   forgetUpload(config.id);
 }
 
-export async function fetchShared(id: string, key: string): Promise<{ snapshot: ShareSnapshot; updatedAt: number; expiresAt: number }> {
-  const r = await call<{ v: 1; iv: string; ct: string; updatedAt: number; expiresAt: number }>('GET', `/v1/shares/${id}`);
-  return { snapshot: await decryptSnapshot(r, key, id), updatedAt: r.updatedAt, expiresAt: r.expiresAt };
+export async function fetchShared(id: string, key: string, opts: { pin?: string | null; preview?: boolean } = {}): Promise<{ snapshot: ShareSnapshot; updatedAt: number; expiresAt: number }> {
+  const headers: Record<string, string> = {};
+  if (opts.pin && SECRET_RE.test(key)) headers['X-Share-Proof'] = await pinProof(key, opts.pin);
+  if (opts.preview) headers['X-Share-Preview'] = '1';
+  const r = await call<{ v: 1; iv: string; ct: string; updatedAt: number; expiresAt: number }>('GET', `/v1/shares/${id}`, undefined, undefined, headers);
+  return { snapshot: await decryptSnapshot(r, key, id, opts.pin), updatedAt: r.updatedAt, expiresAt: r.expiresAt };
 }
 
 // ---------- background sync ----------
@@ -425,7 +458,8 @@ async function uploadOnce(data: AppData, force: boolean, takeover = false) {
     return;
   }
   const snap = buildShareSnapshot(data, cfg.options);
-  const hash = await snapshotFingerprint(snap);
+  const pin = cfg.pin && SECRET_RE.test(cfg.key) ? cfg.pin : null;
+  const hash = await snapshotFingerprint(snap, pin);
   if (!force && readStored(cfg.id).hash === hash) {
     if (statusId !== cfg.id || status.state !== 'ok') setStatus(cfg.id, getSyncStatus(cfg.id));
     return;
@@ -437,7 +471,7 @@ async function uploadOnce(data: AppData, force: boolean, takeover = false) {
   }
   setStatus(cfg.id, { ...getSyncStatus(cfg.id), state: 'uploading', message: null });
   try {
-    await call('PUT', `/v1/shares/${cfg.id}`, { ...(await encryptSnapshot(snap, cfg.key, cfg.id)), writer: deviceId(), ...(takeover ? { takeover: true } : {}) }, cfg.token);
+    await call('PUT', `/v1/shares/${cfg.id}`, { ...(await encryptSnapshot(snap, cfg.key, cfg.id, pin)), readHash: await readHashFor({ key: cfg.key, pin }), writer: deviceId(), ...(takeover ? { takeover: true } : {}) }, cfg.token);
     rememberUpload(cfg.id, hash);
   } catch (e) {
     if (e instanceof ShareHttpError && e.status === 409) {

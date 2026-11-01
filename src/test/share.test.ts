@@ -5,7 +5,7 @@ import { emptyData, normaliseSettings, normaliseShare } from '../lib/defaults';
 import {
   DEFAULT_SHARE_OPTIONS, _resetSyncForTests, buildShareLink, buildShareSnapshot, createShare, decryptSnapshot, deleteShare,
   encryptSnapshot, fetchShared, generateShareKey, generateShareSecret, getSyncStatus, parseShareHash, relativeTime, requestSync, resolveShareId, ShareHttpError,
-  shareIdFromSecret, shareLinkBase, slugifyName,
+  shareIdFromSecret, shareLinkBase, slugifyName, fetchShareStatus,
 } from '../lib/share';
 import type { AppData, ShareOptions } from '../types';
 import { installFakeShareServer, TEST_API } from './fakeShareServer';
@@ -54,6 +54,7 @@ describe('share encryption', () => {
     expect(parseShareHash(`#/d/${secret}.`)?.key).toBe(secret);
     expect(parseShareHash(`#/d/someone-else/${secret}`)?.key).toBe(secret);
     expect(parseShareHash('#/d/sam/short')).toBeNull();
+    expect(parseShareHash(`#/d/sam/${secret}?preview=1`)).toEqual({ id: null, key: secret, name: 'sam', preview: true });
     // Non-Latin names are kept (percent-encoded in the link).
     const arabic = buildShareLink({ id, key: secret, linkName: slugifyName('محمد شريف') }, 'https://x.example/');
     expect(parseShareHash(new URL(arabic).hash)?.name).toBe('محمد-شريف');
@@ -261,6 +262,36 @@ describe('live link with the share relay', () => {
     localStorage.setItem('bpt-device-id', original!);
     await requestSync(data, { force: true });
     expect(getSyncStatus(cfg.id).state).toBe('other-device');
+  });
+
+  it('a PIN is needed to open the link; adding, changing and removing it keeps the same link', async () => {
+    let data = realData();
+    const cfg = await createShare(data, DEFAULT_SHARE_OPTIONS, 30, 'Sam', '4821');
+    data = { ...data, settings: { ...data.settings, share: cfg } };
+    await expect(fetchShared(cfg.id, cfg.key)).rejects.toMatchObject({ code: 'pin-required' });
+    await expect(fetchShared(cfg.id, cfg.key, { pin: '0000' })).rejects.toMatchObject({ code: 'pin-wrong', info: { remaining: 9 } });
+    expect((await fetchShared(cfg.id, cfg.key, { pin: '4821' })).snapshot.data.sessions.length).toBeGreaterThan(0);
+    // The relay never stores the PIN or anything that reveals it directly.
+    const stored = server.env.SHARES.map.get(`share:${cfg.id}`)!.value;
+    expect(stored).not.toContain('4821');
+    // Change the PIN: same link, old PIN stops working.
+    const changed = { ...cfg, pin: '5555' };
+    await requestSync({ ...data, settings: { ...data.settings, share: changed } }, { force: true });
+    await expect(fetchShared(cfg.id, cfg.key, { pin: '4821' })).rejects.toMatchObject({ code: 'pin-wrong' });
+    expect((await fetchShared(cfg.id, cfg.key, { pin: '5555' })).snapshot).toBeTruthy();
+    // Remove it: opens without a PIN.
+    await requestSync({ ...data, settings: { ...data.settings, share: { ...cfg, pin: null } } }, { force: true });
+    expect((await fetchShared(cfg.id, cfg.key)).snapshot).toBeTruthy();
+  });
+
+  it('previews by the patient are not counted as the doctor opening the link', async () => {
+    const cfg = await createShare(realData(), DEFAULT_SHARE_OPTIONS, 30);
+    await fetchShared(cfg.id, cfg.key, { preview: true });
+    expect((await fetchShareStatus(cfg)).lastViewedAt).toBeNull();
+    await fetchShared(cfg.id, cfg.key);
+    const st = await fetchShareStatus(cfg);
+    expect(st.views).toBe(1);
+    expect(st.lastViewedAt).not.toBeNull();
   });
 
   it('turning sharing off makes the link stop working', async () => {

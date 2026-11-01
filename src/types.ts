@@ -322,6 +322,8 @@ export interface ShareConfig {
   key: string;
   /** Name label shown in the link, e.g. "sam-citizen" (cosmetic). */
   linkName: string;
+  /** Optional PIN the doctor must enter (told separately). Short links only. */
+  pin?: string | null;
   createdAt: ISOInstant;
   expiresAt: ISOInstant;
   options: ShareOptions;
