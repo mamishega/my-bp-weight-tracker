@@ -5,6 +5,7 @@ import { Layout } from './components/Layout';
 import { LockScreen } from './components/LockScreen';
 import { Notice } from './components/ui';
 import { ShareSync } from './components/ShareSync';
+import { PushSync } from './components/PushSync';
 import { Dashboard } from './pages/Dashboard';
 import { AddReading } from './pages/AddReading';
 import { MedicationPage } from './pages/Medication';
@@ -43,6 +44,7 @@ export function App() {
   return (
     <Layout>
       <ShareSync />
+      <PushSync />
       {error && <Notice tone="danger" role="alert" title="Storage problem">{error}</Notice>}
       {loading ? <p role="status" className="p-6 text-center text-slate-600">Loading your {mode === 'demo' ? 'demo ' : ''}records…</p> : (
         <Suspense fallback={<p role="status" className="p-6 text-center text-slate-500">Loading…</p>}>

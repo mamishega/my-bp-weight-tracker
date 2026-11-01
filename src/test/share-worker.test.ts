@@ -199,6 +199,8 @@ describe('push reminders', () => {
     expect(ok.status).toBe(200);
     const stored = env.SHARES.map.get('push:' + 'P'.repeat(22))!;
     expect(stored.metadata).toEqual({ tz: 'Australia/Sydney', s: ['07:00', '07:30@1'] });
+    await handle(req('PUT', PUSH, { subscription: sub, tz: 'UTC', schedule: [{ t: '09:00', n: 2, s: '2026-11-01', u: '2026-12-01' }] }, tok), env);
+    expect(env.SHARES.map.get('push:' + 'P'.repeat(22))!.metadata).toEqual({ tz: 'UTC', s: ['09:00~2~20261101!20261201'] });
     expect(stored.value).not.toContain('t'.repeat(32));
     expect((await handle(req('PUT', PUSH, { subscription: sub, tz: 'Australia/Sydney', schedule: [] }, { Authorization: `Bearer ${'u'.repeat(32)}` }), env)).status).toBe(403);
   });
@@ -216,6 +218,13 @@ describe('push reminders', () => {
     expect(isDue({ tz: 'Australia/Sydney', s: ['07:00@2'] }, at('2026-11-01T20:02:00Z'))).toBe(false);
     expect(isDue({ tz: 'UTC', s: ['23:58'] }, at('2026-11-02T00:01:00Z'))).toBe(true);
     expect(isDue({ tz: 'UTC', s: ['23:58@0'] }, at('2026-11-02T00:01:00Z'))).toBe(true); // Sunday's reminder, sent just after midnight
+    // Every 3 days from 1 Nov; and a course ending 2 Nov.
+    expect(isDue({ tz: 'UTC', s: ['07:00~3~20261101'] }, at('2026-11-04T07:01:00Z'))).toBe(true);
+    expect(isDue({ tz: 'UTC', s: ['07:00~3~20261101'] }, at('2026-11-03T07:01:00Z'))).toBe(false);
+    expect(isDue({ tz: 'UTC', s: ['07:00~3~20261101'] }, at('2026-10-29T07:01:00Z'))).toBe(false);
+    expect(isDue({ tz: 'UTC', s: ['07:00!20261102'] }, at('2026-11-02T07:01:00Z'))).toBe(true);
+    expect(isDue({ tz: 'UTC', s: ['07:00!20261102'] }, at('2026-11-03T07:01:00Z'))).toBe(false);
+    expect(isDue({ tz: 'UTC', s: ['garbage'] }, at('2026-11-03T07:01:00Z'))).toBe(false);
   });
   it('sends a signed, empty push to due devices and forgets expired ones', async () => {
     const k = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']);

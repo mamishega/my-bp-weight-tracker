@@ -16,6 +16,7 @@
 //   DELETE /v1/vault/:id            delete (X-Vault-Proof)
 // Push reminders (no health data: only times and a time zone)
 //   PUT    /v1/push/:id             subscribe / update schedule (Bearer token chosen by the app)
+//   POST   /v1/push/:id/test        send one push now (Bearer token)
 //   DELETE /v1/push/:id             unsubscribe (Bearer token)
 //   cron (every 5 min)              sends a payload-less push at each scheduled time
 //
@@ -120,7 +121,7 @@ export async function handle(request, env, now = Date.now()) {
   let m;
   if ((m = url.pathname.match(/^\/v1\/shares(?:\/([^/]+))?(\/status)?\/?$/))) return shares(request, env, now, json, m[1], !!m[2]);
   if ((m = url.pathname.match(/^\/v1\/vault\/([^/]+)\/?$/))) return vault(request, env, now, json, m[1]);
-  if ((m = url.pathname.match(/^\/v1\/push\/([^/]+)\/?$/))) return push(request, env, now, json, m[1]);
+  if ((m = url.pathname.match(/^\/v1\/push\/([^/]+?)(\/test)?\/?$/))) return push(request, env, now, json, m[1], !!m[2]);
   return json(404, { error: 'Not found' });
 }
 
@@ -248,11 +249,20 @@ export function validSubscription(sub) {
   }
 }
 
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 function validSchedule(list) {
-  return Array.isArray(list) && list.length <= 24 && list.every((x) => x && TIME_RE.test(x.t) && (x.d == null || (Array.isArray(x.d) && x.d.every((n) => Number.isInteger(n) && n >= 0 && n <= 6))));
+  return Array.isArray(list) && list.length <= 24 && list.every((x) => x && TIME_RE.test(x.t)
+    && (x.d == null || (Array.isArray(x.d) && x.d.length > 0 && x.d.every((n) => Number.isInteger(n) && n >= 0 && n <= 6)))
+    && (x.n == null || (Number.isInteger(x.n) && x.n >= 2 && x.n <= 90 && DATE_RE.test(x.s)))
+    && (x.u == null || DATE_RE.test(x.u)));
 }
 
-async function push(request, env, now, json, id) {
+/** Compact form kept in KV metadata: "HH:MM[@days][~N~YYYYMMDD][!YYYYMMDD]". */
+export function encodeEntry(x) {
+  return `${x.t}${x.d ? `@${x.d.join('')}` : ''}${x.n ? `~${x.n}~${x.s.replace(/-/g, '')}` : ''}${x.u ? `!${x.u.replace(/-/g, '')}` : ''}`;
+}
+
+async function push(request, env, now, json, id, isTest = false) {
   if (!ID_RE.test(id)) return json(404, { error: 'Not found' });
   const token = bearer(request);
   if (!token) return json(401, { error: 'Missing token' });
@@ -263,6 +273,16 @@ async function push(request, env, now, json, id) {
   if (request.method === 'DELETE') {
     await env.SHARES.delete(key);
     return json(204, null);
+  }
+  if (isTest) {
+    if (request.method !== 'POST' || !existing.value) return json(404, { error: 'Not subscribed' });
+    if (!env.VAPID_PUBLIC_KEY || !env.VAPID_PRIVATE_KEY) return json(503, { error: 'Push is not configured on the server.' });
+    const res = await fetch(existing.value.endpoint, { method: 'POST', headers: { TTL: '600', Urgency: 'high', Authorization: await vapidHeader(env, existing.value.endpoint, now), 'Content-Length': '0' } });
+    if (res.status === 404 || res.status === 410) {
+      await env.SHARES.delete(key);
+      return json(410, { error: 'This device is no longer subscribed. Turn reminders off and on again.' });
+    }
+    return res.ok ? json(200, { ok: true }) : json(502, { error: `The push service answered ${res.status}.` });
   }
   if (request.method !== 'PUT') return json(405, { error: 'Method not allowed' });
   const { body, error } = await readJson(request, 10_000);
@@ -276,15 +296,16 @@ async function push(request, env, now, json, id) {
   }
   if (!validSubscription(body.subscription) || !tzOk || !validSchedule(body.schedule)) return json(400, { error: 'Bad request' });
   // The schedule lives in the key's metadata so the cron job needs one list call, not one read per device.
-  const metadata = { tz: body.tz, s: body.schedule.map((x) => (x.d ? `${x.t}@${x.d.join('')}` : x.t)) };
+  const metadata = { tz: body.tz, s: body.schedule.map(encodeEntry) };
   await env.SHARES.put(key, JSON.stringify({ endpoint: body.subscription.endpoint, tokenHash, updatedAt: now }), { metadata, expirationTtl: 400 * 86_400 });
   return json(200, { ok: true });
 }
 
 function localNow(tz, now) {
-  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: '2-digit', minute: '2-digit', weekday: 'short', hourCycle: 'h23' }).formatToParts(new Date(now)).map((p) => [p.type, p.value]));
-  return { minutes: Number(parts.hour) * 60 + Number(parts.minute), weekday: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(parts.weekday) };
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', weekday: 'short', hourCycle: 'h23' }).formatToParts(new Date(now)).map((p) => [p.type, p.value]));
+  return { minutes: Number(parts.hour) * 60 + Number(parts.minute), weekday: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(parts.weekday), day: Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day)) / 86_400_000 };
 }
+const dayNo = (yyyymmdd) => Date.UTC(Number(yyyymmdd.slice(0, 4)), Number(yyyymmdd.slice(4, 6)) - 1, Number(yyyymmdd.slice(6, 8))) / 86_400_000;
 
 /** Is any scheduled time within the last 5 minutes (inclusive of now)? */
 export function isDue(metadata, now) {
@@ -296,13 +317,17 @@ export function isDue(metadata, now) {
     return false;
   }
   return metadata.s.some((entry) => {
-    const [t, days] = String(entry).split('@');
-    const [h, mm] = t.split(':').map(Number);
-    const diff = (local.minutes - (h * 60 + mm) + 1440) % 1440;
+    const m = String(entry).match(/^(\d{2}):(\d{2})(?:@(\d+))?(?:~(\d+)~(\d{8}))?(?:!(\d{8}))?$/);
+    if (!m) return false;
+    const diff = (local.minutes - (Number(m[1]) * 60 + Number(m[2])) + 1440) % 1440;
     if (diff > 4) return false;
-    if (!days) return true;
-    const weekday = diff > local.minutes ? (local.weekday + 6) % 7 : local.weekday; // scheduled before midnight
-    return days.includes(String(weekday));
+    const crossed = diff > local.minutes; // scheduled just before midnight
+    const weekday = crossed ? (local.weekday + 6) % 7 : local.weekday;
+    const day = crossed ? local.day - 1 : local.day;
+    if (m[3] && !m[3].includes(String(weekday))) return false;
+    if (m[4] && ((day - dayNo(m[5])) < 0 || (day - dayNo(m[5])) % Number(m[4]) !== 0)) return false;
+    if (m[6] && day > dayNo(m[6])) return false;
+    return true;
   });
 }
 

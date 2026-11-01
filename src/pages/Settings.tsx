@@ -9,6 +9,7 @@ import { readFileText, saveFile } from '../lib/files';
 import { buildIcs, reminderEvents } from '../lib/ics';
 import { Icon } from '../components/Icon';
 import { ImportReadingsCard } from '../components/ImportReadings';
+import { disablePush, enablePush, isIos, pushConfigured, pushEnabledHere, pushSupported, testPush } from '../lib/push';
 import { emptyData, uid } from '../lib/defaults';
 import { deleteShare } from '../lib/share';
 import { medSchedule } from '../lib/medication';
@@ -126,6 +127,54 @@ function MonitorForm({ m, onSave, onClose }: { m: Monitor; onSave: (m: Monitor) 
   );
 }
 
+function ClosedAppReminders() {
+  const { data, mode } = useStore();
+  const toast = useToast();
+  const [on, setOn] = useState(pushEnabledHere());
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  if (!pushConfigured() || mode === 'demo') return null;
+  const toggle = async (v: boolean) => {
+    setBusy(true);
+    setError(null);
+    try {
+      if (v) {
+        await enablePush(data);
+        toast('Reminders when the app is closed are on for this device.');
+      } else {
+        await disablePush();
+        toast('Reminders when the app is closed are off for this device.', 'info');
+      }
+      setOn(v);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const test = async () => {
+    try {
+      await testPush();
+      toast('Test sent. A notification should appear within a few seconds.');
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+  return (
+    <div className="mt-5 rounded-xl bg-teal-50/60 p-4 ring-1 ring-teal-100">
+      <h3 className="flex items-center gap-2 font-semibold text-slate-900"><Icon name="bell" className="h-[18px] w-[18px] text-teal-700" /> Reminders when the app is closed</h3>
+      <p className="mt-1 text-sm text-slate-700">Your phone or computer shows the morning, medication, evening and weight reminders you turned on above at their times, even when this app is closed. Only this device’s push address, your time zone and the reminder times are sent to the app’s reminder server — no names, medicines or readings.{isIos() && ' On iPhone and iPad this works only in the app added to your Home Screen.'}</p>
+      <div className="mt-3 flex flex-wrap items-center gap-3">
+        <Checkbox label="Remind me when the app is closed (this device)" checked={on} onChange={(v) => void toggle(v)} />
+        {on && <Button className="min-h-10 text-sm" disabled={busy} onClick={test}>Send a test reminder</Button>}
+      </div>
+      {!pushSupported() && <p className="mt-2 text-sm text-slate-600">This browser can’t receive reminders when the app is closed. Use the calendar option below instead.</p>}
+      {error && <div className="mt-2"><Notice tone="warn" role="alert">{error}</Notice></div>}
+      <p className="mt-2 text-xs text-slate-600">After-medication, refill, backup and appointment reminders depend on your records, so they still appear in the app.</p>
+    </div>
+  );
+}
+
 function RemindersCard() {
   const { data, saveSettings } = useStore();
   const toast = useToast();
@@ -152,7 +201,7 @@ function RemindersCard() {
   return (
     <Card title="Reminders" icon="bell" iconTone="orange">
       <Notice tone="warn" title="What reminders can and can’t do">
-        <p>Reminders appear inside the app while it is open (including when installed). If browser notifications are on, the app can also show a system notification — but <strong>only while the app is open or running in the background in a tab</strong>. This web app has no server, so it cannot reliably remind you when it is closed, the phone is asleep, or the browser has stopped it. Use your phone’s alarm or calendar as a backup for important reminders.</p>
+        <p>Reminders appear inside the app while it is open (including when installed). If browser notifications are on, the app can also show a system notification — but <strong>only while the app is open or running in the background in a tab</strong>. To be reminded when the app is closed, turn on <strong>reminders when the app is closed</strong> below, or add the reminders to your calendar. Use your phone’s alarm as a backup for anything important.</p>
       </Notice>
       <div className="mt-3 flex flex-col gap-4">
         <div className="grid items-end gap-3 sm:grid-cols-[1fr_10rem]">
@@ -190,8 +239,9 @@ function RemindersCard() {
         </SelectField>
         <Checkbox label="Also show browser notifications" checked={st.notificationsEnabled && perm === 'granted'} onChange={enableNotifications} hint={`Permission is only requested when you turn this on. Current permission: ${perm}.`} />
       </div>
+      <ClosedAppReminders />
       <div className="mt-5 rounded-xl bg-slate-50 p-4 ring-1 ring-slate-200">
-        <h3 className="flex items-center gap-2 font-semibold text-slate-900"><Icon name="calendar" className="h-[18px] w-[18px] text-teal-700" /> Reliable reminders when the app is closed</h3>
+        <h3 className="flex items-center gap-2 font-semibold text-slate-900"><Icon name="calendar" className="h-[18px] w-[18px] text-teal-700" /> Or add reminders to your calendar</h3>
         <p className="mt-1 text-sm text-slate-600">Add your reminder schedule to your phone’s calendar. Calendar alerts work even when this app is closed. Titles are generic — no medication names or readings — because calendars are often synced online. After-medication, refill, backup and appointment reminders depend on your records, so they stay in-app.</p>
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <Button icon="download" disabled={reminderEvents(data).length === 0} onClick={exportCalendar}>Add reminders to my calendar (.ics)</Button>
