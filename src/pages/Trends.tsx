@@ -6,7 +6,7 @@ import { DoseMark, DoseLegend, Badge, Button, Card, Checkbox, Empty, Notice, Pag
 import { BPChart, WeightChart } from '../components/Charts';
 import { SESSION_LABEL, SESSION_STYLE, fmt, fmtBP, prePostComparison, sessionAverage, statsFor } from '../lib/bp';
 import { addDays, dateRange, daysBetween, formatDateShort, formatTime, isValidDate, todayIn, weekStart } from '../lib/time';
-import { dayDoseStatus } from '../lib/medication';
+import { dayDoseStatus, dayDoseSummary, doseCounts, medSchedule } from '../lib/medication';
 import { describeChange, fmtWeight, movingAverage7 } from '../lib/weight';
 import { lifestyleSummary } from './SymptomsLifestyle';
 import { uid } from '../lib/defaults';
@@ -84,14 +84,15 @@ function MedHistoryGrid({ data, from, to }: { data: AppData; from: ISODate; to: 
             <tr key={m.id}>
               <th scope="row" className="whitespace-nowrap p-1 text-left font-medium">{m.name}</th>
               {days.map((d) => {
-                const s = dayDoseStatus(data.doses, m.id, d);
-                return <td key={d} className="p-0.5"><DoseMark status={s} label={formatDateShort(d)} /></td>;
+                const s = dayDoseStatus(data.doses, m, d);
+                const sum = dayDoseSummary(data.doses, m, d);
+                return <td key={d} className="p-0.5"><DoseMark status={s} label={`${formatDateShort(d)}${sum ? ` (${sum})` : ''}`} /></td>;
               })}
             </tr>
           ))}
         </tbody>
       </table>
-      <DoseLegend />
+      <DoseLegend partial={meds.some((m) => medSchedule(m).perDay > 1)} />
     </div>
   );
 }
@@ -147,8 +148,9 @@ function WeeklyReview() {
       <h3 className="mt-4 font-semibold">Medication records</h3>
       <ul className="text-sm">
         {data.medications.filter((m) => m.active || data.doses.some((d) => d.medicationId === m.id && d.date >= ws && d.date <= we)).map((m) => {
-          const st = pastDays.map((d) => dayDoseStatus(data.doses, m.id, d));
-          return <li key={m.id}><span className="font-medium">{m.name}:</span> {st.filter((s) => s === 'taken').length} recorded as taken · {st.filter((s) => s === 'skipped').length} skipped · {st.filter((s) => s === 'not_recorded').length} not recorded</li>;
+          const c = doseCounts(data.doses, m, pastDays);
+          const unit = medSchedule(m).perDay > 1 ? `of ${c.expected} doses ` : '';
+          return <li key={m.id}><span className="font-medium">{m.name}:</span> {c.taken} {unit}recorded as taken · {c.skipped} skipped · {c.notRecorded} not recorded</li>;
         })}
         {data.medications.length === 0 && <li>No medications added.</li>}
       </ul>

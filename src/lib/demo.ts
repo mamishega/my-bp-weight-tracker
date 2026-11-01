@@ -69,6 +69,27 @@ export function buildDemoData(timeZone: string, now = new Date()): AppData {
       d.dailyLogs.push({ id: date, date, sleepHours: Math.round((6 + rand() * 2.5) * 2) / 2, sleepQuality: 1 + Math.floor(rand() * 5), stress: 1 + Math.floor(rand() * 5), activityMinutes: Math.round(rand() * 45), activityNote: '', caffeineDrinks: Math.floor(rand() * 3), alcoholDrinks: rand() > 0.8 ? 1 : 0, saltyMeal: rand() > 0.85, illnessOrPain: false, unusual: '', tags: [], notes: 'SAMPLE note', createdAt: ts, updatedAt: ts });
     }
   }
+  // A SAMPLE medicine taken twice a day (separate random stream so the rest of the sample data is unchanged).
+  const r2 = rng(7);
+  const medB: Medication = {
+    id: 'demo-med-b', name: 'SAMPLE medicine B', dose: '5 mg', usualTime: '08:00', timesPerDay: 2, doseTimes: ['08:00', '20:00'], instructions: 'Sample instructions only', active: true,
+    postDoseReminderMinutes: null, supply: null,
+    history: [{ effectiveFrom: zonedToInstant(addDays(today, -30), '07:00', timeZone).iso, name: 'SAMPLE medicine B', dose: '5 mg', usualTime: '08:00', timesPerDay: 2, doseTimes: ['08:00', '20:00'], instructions: 'Sample instructions only' }],
+    createdAt: ts, updatedAt: ts,
+  };
+  d.medications.push(medB);
+  for (let i = 29; i >= 0; i--) {
+    const date = addDays(today, -i);
+    (['08:00', '20:00'] as const).forEach((time, idx) => {
+      if (i === 0 && idx === 1) return; // today's evening dose not recorded yet
+      const roll = r2();
+      if (roll < 0.06) return; // not recorded
+      const status = roll < 0.1 ? 'skipped' : 'taken';
+      const at = zonedToInstant(date, `${time.slice(0, 2)}:${String(Math.floor(r2() * 20)).padStart(2, '0')}`, timeZone);
+      if (at.iso > now.toISOString()) return; // never record a dose in the future
+      d.doses.push({ id: `demo-dose-b-${date}-${idx}`, medicationId: medB.id, date, status, takenAt: status === 'taken' ? at.iso : null, timeZone, utcOffsetMinutes: status === 'taken' ? at.offsetMinutes : null, units: status === 'taken' ? 1 : null, doseIndex: idx, scheduledTime: time, nameSnapshot: medB.name, doseSnapshot: medB.dose, notes: '', createdAt: ts, updatedAt: ts });
+    });
+  }
   const sAt = zonedToInstant(addDays(today, -10), '15:00', timeZone);
   d.symptoms.push({ id: 'demo-sym', date: addDays(today, -10), occurredAt: sAt.iso, timeZone, utcOffsetMinutes: sAt.offsetMinutes, description: 'SAMPLE: mild headache', severity: 'mild', duration: '1 hour', relatedSessionId: null, relatedDoseId: null, actionsTaken: 'Rested, drank water', notes: '', createdAt: ts, updatedAt: ts });
   d.appointments.push({ id: 'demo-appt', date: addDays(today, 5), time: '10:30', clinician: 'SAMPLE GP', location: 'Sample clinic', purpose: 'Blood pressure review', notes: '', createdAt: ts, updatedAt: ts });

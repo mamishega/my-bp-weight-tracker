@@ -229,20 +229,21 @@ export function Empty({ children, icon = 'list' }: { children: ReactNode; icon?:
 }
 
 /** Taken / skipped / not recorded marker with an accessible label. */
-export function DoseMark({ status, label }: { status: 'taken' | 'skipped' | 'not_recorded'; label?: string }) {
-  const text = status === 'taken' ? 'recorded as taken' : status === 'skipped' ? 'recorded as skipped' : 'not recorded';
-  const cls = status === 'taken' ? 'bg-emerald-600 text-white' : status === 'skipped' ? 'bg-white text-slate-600 ring-1 ring-slate-400' : 'bg-transparent text-slate-300';
+export function DoseMark({ status, label }: { status: 'taken' | 'skipped' | 'partial' | 'not_recorded'; label?: string }) {
+  const text = status === 'taken' ? 'recorded as taken' : status === 'skipped' ? 'recorded as skipped' : status === 'partial' ? 'some doses recorded' : 'not recorded';
+  const cls = status === 'taken' ? 'bg-emerald-600 text-white' : status === 'skipped' ? 'bg-white text-slate-600 ring-1 ring-slate-400' : status === 'partial' ? 'bg-white text-emerald-700 ring-2 ring-emerald-600' : 'bg-transparent text-slate-300';
   return (
     <span role="img" aria-label={label ? `${label}: ${text}` : text} title={label ? `${label}: ${text}` : text} className={cx('inline-flex h-5 w-5 items-center justify-center rounded-full', cls)}>
-      {status === 'taken' ? <Icon name="check" className="h-3 w-3" strokeWidth={3} /> : status === 'skipped' ? <Icon name="skip" className="h-3 w-3" strokeWidth={2.5} /> : <span className="h-1.5 w-1.5 rounded-full bg-slate-300" />}
+      {status === 'taken' ? <Icon name="check" className="h-3 w-3" strokeWidth={3} /> : status === 'skipped' ? <Icon name="skip" className="h-3 w-3" strokeWidth={2.5} /> : status === 'partial' ? <span className="h-2.5 w-1.5 rounded-l-full bg-emerald-600" style={{ marginRight: '0.375rem' }} /> : <span className="h-1.5 w-1.5 rounded-full bg-slate-300" />}
     </span>
   );
 }
 
-export function DoseLegend() {
+export function DoseLegend({ partial = false }: { partial?: boolean }) {
   return (
     <p className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
-      <span className="inline-flex items-center gap-1.5"><DoseMark status="taken" /> Recorded as taken</span>
+      <span className="inline-flex items-center gap-1.5"><DoseMark status="taken" /> {partial ? 'All doses recorded as taken' : 'Recorded as taken'}</span>
+      {partial && <span className="inline-flex items-center gap-1.5"><DoseMark status="partial" /> Some doses recorded</span>}
       <span className="inline-flex items-center gap-1.5"><DoseMark status="skipped" /> Recorded as skipped</span>
       <span className="inline-flex items-center gap-1.5"><DoseMark status="not_recorded" /> Not recorded</span>
     </p>

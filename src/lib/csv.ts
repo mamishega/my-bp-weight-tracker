@@ -49,9 +49,9 @@ export function readingsCsv(d: AppData): string {
 export function dosesCsv(d: AppData): string {
   const rows = [...d.doses].sort((a, b) => a.date.localeCompare(b.date)).map((x) => {
     const lt = local(x.takenAt, x.timeZone);
-    return [x.id, x.date, x.medicationId, x.nameSnapshot, x.doseSnapshot, x.status, x.takenAt ? lt.time : 'Medication time unknown', x.timeZone, x.takenAt ?? '', x.units ?? '', x.notes];
+    return [x.id, x.date, x.medicationId, x.nameSnapshot, x.doseSnapshot, x.status, x.takenAt ? lt.time : 'Medication time unknown', x.timeZone, x.takenAt ?? '', x.units ?? '', x.notes, x.doseIndex != null ? x.doseIndex + 1 : '', x.scheduledTime ?? ''];
   });
-  return toCsv(['dose_id', 'date', 'medication_id', 'medication_name', 'dose', 'status', 'local_time_taken', 'time_zone', 'utc_instant', 'units', 'notes'], rows);
+  return toCsv(['dose_id', 'date', 'medication_id', 'medication_name', 'dose', 'status', 'local_time_taken', 'time_zone', 'utc_instant', 'units', 'notes', 'dose_number', 'scheduled_time'], rows);
 }
 
 export function weightsCsv(d: AppData): string {

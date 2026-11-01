@@ -6,7 +6,7 @@ import type { AppData, ISODate, SessionType } from '../types';
 import { Stat, DoseMark, DoseLegend } from './ui';
 import { SESSION_LABEL, SESSION_SHORT, SESSION_STYLE, fmt, fmtBP, sessionAverage, statsFor } from '../lib/bp';
 import { addDays, dateRange, formatDateShort, formatDateTiny, formatTime } from '../lib/time';
-import { dayDoseStatus } from '../lib/medication';
+import { dayDoseStatus, dayDoseSummary, describeSchedule, doseCounts, medSchedule } from '../lib/medication';
 import { describeChange, fmtWeight, movingAverage7 } from '../lib/weight';
 
 const TYPES: SessionType[] = ['morning_pre', 'morning_post', 'evening'];
@@ -79,19 +79,20 @@ export function DoctorDashboard({ data, from, to, showSymptoms }: { data: AppDat
           <h3 className="mt-5 text-base font-semibold">Medication records, last 7 days</h3>
           <div className="mt-2 flex flex-col gap-2">
             {meds.map((m) => {
-              const st = weekDays.map((d) => ({ d, s: dayDoseStatus(data.doses, m.id, d) }));
-              const n = (k: string) => st.filter((x) => x.s === k).length;
+              const st = weekDays.map((d) => ({ d, s: dayDoseStatus(data.doses, m, d), sum: dayDoseSummary(data.doses, m, d) }));
+              const c = doseCounts(data.doses, m, weekDays);
+              const multi = medSchedule(m).perDay > 1;
               return (
                 <div key={m.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg bg-slate-50 p-3 ring-1 ring-slate-200/70">
-                  <p className="min-w-40 font-semibold">{m.name} {m.dose}</p>
+                  <p className="min-w-40 font-semibold">{m.name} {m.dose}<span className="block text-xs font-normal text-slate-500">{describeSchedule(m)}</span></p>
                   <ul className="flex gap-1" aria-label={`${m.name}, last 7 days`}>
-                    {st.map((x) => <li key={x.d} className="flex flex-col items-center text-[0.65rem] text-slate-500"><DoseMark status={x.s} label={`${formatDateShort(x.d)}: ${x.s === 'not_recorded' ? 'not recorded' : x.s}`} />{formatDateTiny(x.d)}</li>)}
+                    {st.map((x) => <li key={x.d} className="flex flex-col items-center text-[0.65rem] text-slate-500"><DoseMark status={x.s} label={`${formatDateShort(x.d)}${x.sum ? ` (${x.sum})` : ''}`} />{formatDateTiny(x.d)}</li>)}
                   </ul>
-                  <p className="text-sm text-slate-700">Taken {n('taken')} · skipped {n('skipped')} · not recorded {n('not_recorded')}</p>
+                  <p className="text-sm text-slate-700">{multi ? `${c.taken} of ${c.expected} doses taken` : `Taken ${c.taken}`} · skipped {c.skipped} · not recorded {c.notRecorded}</p>
                 </div>
               );
             })}
-            <DoseLegend />
+            <DoseLegend partial={meds.some((m) => medSchedule(m).perDay > 1)} />
           </div>
         </>
       )}

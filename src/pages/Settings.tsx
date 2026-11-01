@@ -10,6 +10,7 @@ import { buildIcs, reminderEvents } from '../lib/ics';
 import { Icon } from '../components/Icon';
 import { emptyData, uid } from '../lib/defaults';
 import { deleteShare } from '../lib/share';
+import { medSchedule } from '../lib/medication';
 import { isValidTimeZone, listTimeZones, formatDateShort, localDateOf, formatTime } from '../lib/time';
 import { requestPersistence } from '../db/db';
 import { cryptoAvailable, passcodeProblem } from '../lib/crypto';
@@ -130,7 +131,7 @@ function RemindersCard() {
   const st = data.settings;
   const r = st.reminders;
   const perm = typeof Notification === 'undefined' ? 'unsupported' : Notification.permission;
-  const noTime = data.medications.filter((m) => m.active && !m.usualTime);
+  const noTime = data.medications.filter((m) => m.active && medSchedule(m).times.some((t) => !t));
   const noInterval = data.medications.filter((m) => m.active && m.postDoseReminderMinutes == null);
   const set = (patch: Partial<Settings['reminders']>) => saveSettings({ ...st, reminders: { ...r, ...patch } });
   const enableNotifications = async (on: boolean) => {
@@ -157,8 +158,8 @@ function RemindersCard() {
           <Checkbox label="Morning reading before medication" checked={r.morningPre.enabled} onChange={(v) => set({ morningPre: { ...r.morningPre, enabled: v } })} />
           <TextField label="Time" type="time" value={r.morningPre.time} onChange={(e) => e.target.value && set({ morningPre: { ...r.morningPre, time: e.target.value } })} />
         </div>
-        <Checkbox label="Morning medication (at each medicine’s usual time)" checked={r.medication.enabled} onChange={(v) => set({ medication: { enabled: v } })} hint="Asks you to record taken or skipped. It never marks a dose for you." />
-        {r.medication.enabled && noTime.length > 0 && <Notice tone="warn" title="Some medicines have no usual time">No reminder can be shown for {noTime.map((m) => m.name).join(', ')}. Add a usual time on the <a href="#/medication">Medication page</a>.</Notice>}
+        <Checkbox label="Medication (at the usual time of each dose)" checked={r.medication.enabled} onChange={(v) => set({ medication: { enabled: v } })} hint="Asks you to record taken or skipped. It never marks a dose for you." />
+        {r.medication.enabled && noTime.length > 0 && <Notice tone="warn" title="Some doses have no usual time">No reminder can be shown for those doses of {noTime.map((m) => m.name).join(', ')}. Add a usual time for each dose on the <a href="#/medication">Medication page</a>.</Notice>}
         {r.postDose.enabled && noInterval.length > 0 && <Notice tone="info">No after-medication reminder for {noInterval.map((m) => m.name).join(', ')} — no interval has been entered. Only add one if your clinician asked for after-medication readings.</Notice>}
         <Checkbox label="After-medication reading" checked={r.postDose.enabled} onChange={(v) => set({ postDose: { enabled: v } })} hint="Timed from the actual recorded dose time, using the interval you entered for each medication from your clinician’s instructions." />
         <div className="grid items-end gap-3 sm:grid-cols-[1fr_10rem]">

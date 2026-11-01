@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { useStore } from '../store/Store';
-import { Badge, Card, LinkButton, Button, PageTitle, Notice, Checkbox, cx } from '../components/ui';
+import { Badge, DoseMark, Card, LinkButton, Button, PageTitle, Notice, Checkbox, cx } from '../components/ui';
 import { Icon, type IconName } from '../components/Icon';
 import { BackupNowButton, LastBackup, useNow } from '../components/Backup';
 import { UrgentHelp, SafetyStatement } from '../components/safety';
@@ -8,7 +8,7 @@ import { DoseForm } from '../components/DoseForm';
 import { sessionAverage, fmtBP, fmt, aboveContactThreshold } from '../lib/bp';
 import { formatDateLong, formatTime, todayIn, formatDuration } from '../lib/time';
 import { fmtWeight } from '../lib/weight';
-import { dayDoseStatus, doseTiming, estimateSupply } from '../lib/medication';
+import { dayDoseStatus, dayDoseSummary, daySlots, doseLabel, doseTiming, estimateSupply } from '../lib/medication';
 import type { Medication, SessionType, DoseStatus } from '../types';
 
 const SESSION_META: Record<SessionType, { icon: IconName; tone: 'blue' | 'orange' | 'green'; label: string }> = {
@@ -96,25 +96,45 @@ function BPCard({ type, today }: { type: SessionType; today: string }) {
 function MedRow({ med, today }: { med: Medication; today: string }) {
   const { data } = useStore();
   const [open, setOpen] = useState<DoseStatus | null>(null);
-  const status = dayDoseStatus(data.doses, med.id, today);
-  const taken = data.doses.find((d) => d.medicationId === med.id && d.date === today && d.status === 'taken');
+  const status = dayDoseStatus(data.doses, med, today);
+  const { slots } = daySlots(data.doses, med, today);
+  const next = slots.find((s) => !s.record);
+  const multi = slots.length > 1;
+  const taken = slots[0].record?.status === 'taken' ? slots[0].record : null;
   return (
     <li className="flex flex-col gap-2 py-3 first:pt-0 last:pb-0">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="font-semibold text-slate-900">{med.name} <span className="font-normal text-slate-500">{med.dose}</span></p>
         <div>
-          {status === 'not_recorded' && <Badge>Not recorded</Badge>}
-          {status === 'taken' && <Badge tone="ok">Taken {taken?.takenAt ? `· ${formatTime(taken.takenAt, taken.timeZone)}` : '· time unknown'}</Badge>}
-          {status === 'skipped' && <Badge tone="info" icon="skip">Skipped</Badge>}
+          {multi ? (
+            status === 'not_recorded' ? <Badge>Not recorded</Badge> : <Badge tone={status === 'taken' ? 'ok' : status === 'skipped' ? 'info' : 'neutral'}>{dayDoseSummary(data.doses, med, today)}</Badge>
+          ) : (
+            <>
+              {status === 'not_recorded' && <Badge>Not recorded</Badge>}
+              {status === 'taken' && <Badge tone="ok">Taken {taken?.takenAt ? `· ${formatTime(taken.takenAt, taken.timeZone)}` : '· time unknown'}</Badge>}
+              {status === 'skipped' && <Badge tone="info" icon="skip">Skipped</Badge>}
+            </>
+          )}
         </div>
       </div>
-      {status === 'not_recorded' && (
+      {multi && (
+        <ul className="flex flex-wrap gap-1.5" aria-label={`${med.name} doses today`}>
+          {slots.map((s) => (
+            <li key={s.index} className="inline-flex items-center gap-1.5 rounded-full bg-slate-50 px-2 py-0.5 text-xs text-slate-700 ring-1 ring-slate-200">
+              <DoseMark status={!s.record ? 'not_recorded' : s.record.status} label={doseLabel(med, s.index)} />
+              {doseLabel(med, s.index)}
+            </li>
+          ))}
+        </ul>
+      )}
+      {next && (
         <div className="grid grid-cols-2 gap-2">
-          <Button variant="primary" className="min-h-10 whitespace-nowrap px-3 text-sm" icon="check" onClick={() => setOpen('taken')}>Record taken</Button>
-          <Button className="min-h-10 whitespace-nowrap px-3 text-sm" onClick={() => setOpen('skipped')}>Record skipped</Button>
+          <Button variant="primary" className="min-h-10 whitespace-nowrap px-3 text-sm" icon="check" onClick={() => setOpen('taken')}>Record taken{multi && <span className="sr-only">: {doseLabel(med, next.index)}</span>}</Button>
+          <Button className="min-h-10 whitespace-nowrap px-3 text-sm" onClick={() => setOpen('skipped')}>Record skipped{multi && <span className="sr-only">: {doseLabel(med, next.index)}</span>}</Button>
         </div>
       )}
-      {open && <DoseForm med={med} date={today} initialStatus={open} open onClose={() => setOpen(null)} />}
+      {multi && next && <p className="text-xs text-slate-500">Next to record: {doseLabel(med, next.index)}</p>}
+      {open && next && <DoseForm med={med} date={today} doseIndex={next.index} initialStatus={open} open onClose={() => setOpen(null)} />}
     </li>
   );
 }
@@ -141,7 +161,7 @@ export function Dashboard() {
   const isEmpty = data.sessions.length + data.weights.length + data.medications.length === 0;
   const has = (t: SessionType) => data.sessions.some((s) => s.date === today && s.sessionType === t);
   const recordedCount = (['morning_pre', 'morning_post', 'evening'] as SessionType[]).filter(has).length;
-  const medsDone = meds.length > 0 && meds.every((m) => dayDoseStatus(data.doses, m.id, today) !== 'not_recorded');
+  const medsDone = meds.length > 0 && meds.every((m) => daySlots(data.doses, m, today).slots.every((s) => s.record));
   const supplyWarnings = meds.map((m) => ({ m, e: estimateSupply(m, data.doses, data.stock, today) })).filter((x) => x.e.belowThreshold || x.e.renewalSoon);
   const hour = Number(new Intl.DateTimeFormat('en-AU', { timeZone: tz, hour: 'numeric', hourCycle: 'h23' }).format(now));
   const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
@@ -169,7 +189,7 @@ export function Dashboard() {
 
       {isEmpty && mode === 'real' && (
         <Notice tone="info" title="Welcome — your dashboard is empty and ready">
-          <p>Start by adding your morning medication and, if you have one, the weight goal agreed with your healthcare professional. Or record a reading straight away.</p>
+          <p>Start by adding your medication and, if you have one, the weight goal agreed with your healthcare professional. Or record a reading straight away.</p>
           <div className="mt-3 flex flex-wrap gap-2">
             <LinkButton href="#/medication" variant="primary" icon="pill">Add medication</LinkButton>
             <LinkButton href="#/weight" icon="weight">Set weight goal</LinkButton>
@@ -194,7 +214,7 @@ export function Dashboard() {
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         <MetricCard
-          icon="pill" tone="teal" eyebrow="Morning dose" title="Medication"
+          icon="pill" tone="teal" eyebrow="Today’s doses" title="Medication"
           status={null}
           footer={<LinkButton href="#/medication" variant="ghost" className="min-h-10 text-sm" icon="chevronRight">{meds.length ? 'Doses & supply' : 'Add medication'}</LinkButton>}
         >

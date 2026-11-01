@@ -1,3 +1,4 @@
+import { medSchedule } from './medication';
 // Calendar (.ics) export of the reminder schedule. Calendar apps alert reliably
 // even when this web app is closed. Titles are deliberately generic (no
 // medication names, readings or other health details) because calendars are
@@ -28,8 +29,8 @@ export function reminderEvents(d: AppData): IcsEvent[] {
   const ev: IcsEvent[] = [];
   if (r.morningPre.enabled) ev.push({ uid: 'morning-pre', title: 'Morning blood pressure (before medication)', time: r.morningPre.time, description: 'Rest 5 minutes, then take two readings one minute apart. Record them in My BP & Weight.' });
   if (r.medication.enabled) {
-    const times = [...new Set(d.medications.filter((m) => m.active && m.usualTime).map((m) => m.usualTime!))].sort();
-    times.forEach((t, i) => ev.push({ uid: `medication-${i}`, title: 'Morning medication — record it', time: t, description: 'Record in My BP & Weight whether you took or skipped your morning medication.' }));
+    const times = [...new Set(d.medications.filter((m) => m.active).flatMap((m) => medSchedule(m).times).filter((t): t is string => !!t))].sort();
+    times.forEach((t, i) => ev.push({ uid: `medication-${i}`, title: 'Medication — record it', time: t, description: 'Record in My BP & Weight whether you took or skipped your medication.' }));
   }
   if (r.evening.enabled) ev.push({ uid: 'evening', title: 'Evening blood pressure', time: r.evening.time, description: 'Rest 5 minutes, then take two readings one minute apart. Record them in My BP & Weight.' });
   if (r.weight.enabled && r.weight.weekdays.length) ev.push({ uid: 'weight', title: 'Weight (optional)', time: r.weight.time, byDay: r.weight.weekdays, description: 'If you’d like, weigh yourself under your usual conditions.' });

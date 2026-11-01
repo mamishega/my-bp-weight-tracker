@@ -3,21 +3,23 @@ import type { DoseRecord, DoseStatus, Medication } from '../types';
 import { useStore } from '../store/Store';
 import { useDirtyForm } from '../store/dirty';
 import { Button, Checkbox, Modal, RadioGroup, TextArea, TextField, useToast, Notice } from './ui';
-import { instantToZoned, isValidDate, isValidTime, nowTimeIn, todayIn, zonedToInstant } from '../lib/time';
+import { formatClock, instantToZoned, isValidDate, isValidTime, nowTimeIn, todayIn, zonedToInstant } from '../lib/time';
 import { uid } from '../lib/defaults';
-import { versionAt } from '../lib/medication';
+import { daySlots, doseLabel, medSchedule, nextOpenSlot, scheduleOn, versionAt } from '../lib/medication';
 
 interface Props {
   med: Medication;
   existing?: DoseRecord;
   initialStatus?: DoseStatus;
   date?: string;
+  /** Which scheduled dose (0-based). Defaults to the first one not yet recorded that day. */
+  doseIndex?: number;
   open: boolean;
   onClose: () => void;
 }
 
 /** Record a dose as taken or skipped. The user always chooses; nothing is assumed. */
-export function DoseForm({ med, existing, initialStatus, date, open, onClose }: Props) {
+export function DoseForm({ med, existing, initialStatus, date, doseIndex, open, onClose }: Props) {
   const { data, put } = useStore();
   const toast = useToast();
   const tz = existing?.timeZone ?? data.settings.timeZone;
@@ -26,14 +28,24 @@ export function DoseForm({ med, existing, initialStatus, date, open, onClose }: 
   const [day, setDay] = useState(existing?.date ?? date ?? todayIn(tz));
   const [time, setTime] = useState(init?.time ?? nowTimeIn(tz));
   const [unknown, setUnknown] = useState(existing ? existing.status === 'taken' && !existing.takenAt : false);
-  const [units, setUnits] = useState(String(existing?.units ?? med.supply?.unitsPerDay ?? ''));
+  const sched0 = medSchedule(med);
+  const [slot, setSlot] = useState<number>(() => {
+    if (existing) return existing.doseIndex ?? daySlots(data.doses, med, existing.date).slots.find((x) => x.record?.id === existing.id)?.index ?? 0;
+    return doseIndex ?? nextOpenSlot(data.doses, med, date ?? todayIn(tz)) ?? 0;
+  });
+  const perDose = med.supply?.unitsPerDay != null ? Math.round((med.supply.unitsPerDay / sched0.perDay) * 100) / 100 : null;
+  const [units, setUnits] = useState(String(existing?.units ?? perDose ?? ''));
   const [notes, setNotes] = useState(existing?.notes ?? '');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [dirty, setDirty] = useState(false);
   useDirtyForm(`dose-${med.id}`, open && dirty);
   const ch = <T,>(f: (v: T) => void) => (v: T) => { setDirty(true); f(v); };
 
-  const duplicates = data.doses.filter((d) => d.medicationId === med.id && d.date === day && d.id !== existing?.id);
+  // The schedule that applied on the chosen day (it may have changed since).
+  const sched = scheduleOn(med, day);
+  const label = (i: number) => (sched.perDay === 1 ? doseLabel(med, 0) : `Dose ${i + 1}${sched.times[i] ? ` (${formatClock(sched.times[i]!)})` : ''}`);
+  // Another record for the same dose on the same day (several doses a day are normal).
+  const duplicates = daySlots(data.doses.filter((d) => d.id !== existing?.id), med, day).slots.filter((x) => x.index === slot && x.record).map((x) => x.record!);
 
   const save = async () => {
     const e: Record<string, string> = {};
@@ -55,6 +67,8 @@ export function DoseForm({ med, existing, initialStatus, date, open, onClose }: 
       timeZone: tz,
       utcOffsetMinutes: z?.offsetMinutes ?? null,
       units: status === 'taken' ? u : null,
+      doseIndex: Math.min(slot, sched.perDay - 1),
+      scheduledTime: sched.times[Math.min(slot, sched.perDay - 1)] ?? null,
       nameSnapshot: existing?.nameSnapshot ?? v.name,
       doseSnapshot: existing?.doseSnapshot ?? v.dose,
       notes,
@@ -63,13 +77,26 @@ export function DoseForm({ med, existing, initialStatus, date, open, onClose }: 
     };
     await put('doses', rec);
     setDirty(false);
-    toast(status === 'taken' ? `${med.name} recorded as taken${rec.takenAt ? '' : ' (time unknown)'}.` : `${med.name} recorded as skipped.`);
+    const which = sched.perDay > 1 ? ` (${label(slot).toLowerCase()})` : '';
+    toast(status === 'taken' ? `${med.name}${which} recorded as taken${rec.takenAt ? '' : ' (time unknown)'}.` : `${med.name}${which} recorded as skipped.`);
     onClose();
   };
 
   return (
     <Modal open={open} onClose={onClose} title={`${existing ? 'Edit' : 'Record'} dose: ${med.name} ${med.dose}`} footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" onClick={save}>Save dose record</Button></>}>
       <div className="flex flex-col gap-4">
+ {sched.perDay > 1 && (
+          <RadioGroup
+            name={`slot-${med.id}`}
+            legend={`Which dose? (${sched.perDay} a day)`}
+            value={String(slot)}
+            onChange={(v) => { setDirty(true); setSlot(Number(v)); }}
+            options={sched.times.map((_, i) => {
+              const rec = daySlots(data.doses.filter((d) => d.id !== existing?.id), med, day).slots[i].record;
+              return { value: String(i), label: label(i), hint: rec ? `Already recorded as ${rec.status}` : undefined };
+            })}
+          />
+        )}
         <RadioGroup name={`st-${med.id}`} legend="What happened?" value={status} onChange={ch(setStatus)} options={[{ value: 'taken', label: 'Taken' }, { value: 'skipped', label: 'Skipped / not taken' }]} />
         <TextField label="Date" type="date" value={day} onChange={(e) => ch(setDay)(e.target.value)} error={errors.day} />
         {status === 'taken' && (
@@ -82,7 +109,7 @@ export function DoseForm({ med, existing, initialStatus, date, open, onClose }: 
         <TextArea label="Notes" optional value={notes} onChange={(e) => ch(setNotes)(e.target.value)} />
         {duplicates.length > 0 && (
           <Notice tone="warn" title="Possible duplicate">
-            There {duplicates.length === 1 ? 'is already a record' : `are already ${duplicates.length} records`} for {med.name} on this date. Both will be kept — you can delete one in History if it was entered twice.
+            There is already a record for {sched.perDay > 1 ? label(slot).toLowerCase() + ' of ' : ''}{med.name} on this date. Both will be kept — you can delete one in History if it was entered twice.
           </Notice>
         )}
         <p className="text-sm text-slate-600">This app never advises delaying, repeating, skipping, stopping or changing a dose. Follow your prescriber’s instructions.</p>

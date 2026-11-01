@@ -1,5 +1,99 @@
 import type { BPSession, DoseRecord, Medication, MedicationVersion, StockEvent, ISODate } from '../types';
-import { minutesBetween } from './time';
+import { formatClock, minutesBetween } from './time';
+
+export const MAX_TIMES_PER_DAY = 6;
+
+/** A medication's daily schedule: how many doses and each dose's usual time. Older data = once a day. */
+export function medSchedule(m: Pick<Medication, 'usualTime' | 'timesPerDay' | 'doseTimes'>): { perDay: number; times: (string | null)[] } {
+  // Tolerate damaged or hand-edited data: anything invalid means once a day.
+  const raw = typeof m.timesPerDay === 'number' && Number.isFinite(m.timesPerDay) ? Math.round(m.timesPerDay) : 1;
+  const perDay = Math.min(MAX_TIMES_PER_DAY, Math.max(1, raw));
+  const valid = (t: unknown): string | null => (typeof t === 'string' && /^\d{2}:\d{2}$/.test(t) ? t : null);
+  const src = Array.isArray(m.doseTimes) && m.doseTimes.length ? m.doseTimes : [m.usualTime ?? null];
+  const times = Array.from({ length: perDay }, (_, i) => valid(src[i]));
+  return { perDay, times };
+}
+
+/**
+ * The schedule that applied on a given day, from the prescription history, so
+ * changing how often a medicine is taken never rewrites earlier days.
+ */
+export function scheduleOn(med: Medication, date: ISODate): { perDay: number; times: (string | null)[] } {
+  const versions = [...(med.history ?? [])].sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom));
+  if (versions.length === 0) return medSchedule(med);
+  let v: MedicationVersion = versions[0];
+  for (const x of versions) if ((x.effectiveDate ?? x.effectiveFrom.slice(0, 10)) <= date) v = x;
+  // The newest version is the medicine's current schedule.
+  return v === versions[versions.length - 1] ? medSchedule(med) : medSchedule(v);
+}
+
+/** "Once a day at 7:30 am" / "2 times a day: 8:00 am, 8:00 pm". */
+export function describeSchedule(m: Pick<Medication, 'usualTime' | 'timesPerDay' | 'doseTimes'>): string {
+  const { perDay, times } = medSchedule(m);
+  const set = times.filter(Boolean) as string[];
+  if (perDay === 1) return times[0] ? `Once a day, usually ${formatClock(times[0])}` : 'Once a day';
+  return `${perDay} times a day${set.length ? `: ${times.map((t) => (t ? formatClock(t) : 'no set time')).join(', ')}` : ''}`;
+}
+
+/** Label for one scheduled dose, e.g. "Dose 2 (8:00 pm)". */
+export function doseLabel(m: Pick<Medication, 'usualTime' | 'timesPerDay' | 'doseTimes'>, index: number): string {
+  const { perDay, times } = medSchedule(m);
+  if (perDay === 1) return times[0] ? `Usual dose (${formatClock(times[0])})` : 'Usual dose';
+  return `Dose ${index + 1}${times[index] ? ` (${formatClock(times[index])})` : ''}`;
+}
+
+export interface DoseSlot {
+  index: number;
+  time: string | null;
+  record: DoseRecord | null;
+}
+
+/**
+ * Each scheduled dose of a day with the record that covers it. Records tagged
+ * with a dose number fill that slot; untagged records (older data) fill the
+ * remaining slots in time order. Extra records are returned separately.
+ */
+export function daySlots(doses: DoseRecord[], med: Medication, date: ISODate): { slots: DoseSlot[]; extra: DoseRecord[] } {
+  const { times } = scheduleOn(med, date);
+  const slots: DoseSlot[] = times.map((time, index) => ({ index, time, record: null }));
+  const list = dosesForDay(doses, med.id, date).sort((a, b) => (a.takenAt ?? a.createdAt).localeCompare(b.takenAt ?? b.createdAt));
+  const extra: DoseRecord[] = [];
+  const untagged: DoseRecord[] = [];
+  for (const d of list) {
+    const i = d.doseIndex;
+    if (i != null && i >= 0 && i < slots.length && !slots[i].record) slots[i].record = d;
+    else if (i != null && i >= 0 && i < slots.length) extra.push(d);
+    else untagged.push(d);
+  }
+  for (const d of untagged) {
+    const free = slots.find((s) => !s.record);
+    if (free) free.record = d;
+    else extra.push(d);
+  }
+  return { slots, extra };
+}
+
+/** The first scheduled dose of the day that has no record yet (or null if all are recorded). */
+export function nextOpenSlot(doses: DoseRecord[], med: Medication, date: ISODate): number | null {
+  return daySlots(doses, med, date).slots.find((s) => !s.record)?.index ?? null;
+}
+
+export interface DoseCounts { expected: number; taken: number; skipped: number; notRecorded: number }
+
+/** Counts over a set of days. Unrecorded doses are "not recorded", never "missed". */
+export function doseCounts(doses: DoseRecord[], med: Medication, days: ISODate[]): DoseCounts {
+  const out: DoseCounts = { expected: 0, taken: 0, skipped: 0, notRecorded: 0 };
+  for (const day of days) {
+    const { slots } = daySlots(doses, med, day);
+    out.expected += slots.length;
+    for (const s of slots) {
+      if (!s.record) out.notRecorded++;
+      else if (s.record.status === 'taken') out.taken++;
+      else out.skipped++;
+    }
+  }
+  return out;
+}
 
 /** Returns the medication version that applied at an instant (history preserved). */
 export function versionAt(med: Medication, at: string): MedicationVersion {
@@ -12,16 +106,21 @@ export function versionAt(med: Medication, at: string): MedicationVersion {
 /** Applies edits to a medication, appending a history version when prescription details change. */
 export function updateMedication(
   med: Medication,
-  changes: Partial<Pick<Medication, 'name' | 'dose' | 'usualTime' | 'instructions' | 'active' | 'postDoseReminderMinutes' | 'supply'>>,
+  changes: Partial<Pick<Medication, 'name' | 'dose' | 'usualTime' | 'timesPerDay' | 'doseTimes' | 'instructions' | 'active' | 'postDoseReminderMinutes' | 'supply'>>,
   now: string,
+  /** The patient's local date, so a schedule change applies from that day. */
+  today?: ISODate,
 ): Medication {
   const next: Medication = { ...med, ...changes, updatedAt: now };
+  const a = medSchedule(med);
+  const b = medSchedule(next);
+  const scheduleChanged = a.perDay !== b.perDay || a.times.join() !== b.times.join();
   const prescriptionChanged =
-    next.name !== med.name || next.dose !== med.dose || next.usualTime !== med.usualTime || next.instructions !== med.instructions;
+    next.name !== med.name || next.dose !== med.dose || next.usualTime !== med.usualTime || next.instructions !== med.instructions || scheduleChanged;
   if (prescriptionChanged) {
     next.history = [
       ...med.history,
-      { effectiveFrom: now, name: next.name, dose: next.dose, usualTime: next.usualTime, instructions: next.instructions },
+      { effectiveFrom: now, ...(today ? { effectiveDate: today } : {}), name: next.name, dose: next.dose, usualTime: next.usualTime, timesPerDay: b.perDay, doseTimes: b.times, instructions: next.instructions },
     ];
   }
   return next;
@@ -44,21 +143,59 @@ export function doseTiming(session: BPSession, dose: DoseRecord | undefined): Do
   return { kind: 'ok', dose, minutes };
 }
 
-/** Suggested dose links for an after-medication session: doses recorded as taken on the same day. */
+/**
+ * Suggested dose links for an after-medication (morning) session: for each
+ * medicine, its first dose recorded as taken that day, so a later dose of a
+ * medicine taken several times a day is never linked to the morning reading.
+ */
 export function suggestDoseLinks(date: ISODate, doses: DoseRecord[]): string[] {
-  return doses.filter((d) => d.date === date && d.status === 'taken').map((d) => d.id);
+  const first = new Map<string, DoseRecord>();
+  const at = (d: DoseRecord) => d.takenAt ?? d.createdAt;
+  for (const d of doses) {
+    if (d.date !== date || d.status !== 'taken') continue;
+    const cur = first.get(d.medicationId);
+    const better = !cur || (d.doseIndex ?? 99) < (cur.doseIndex ?? 99) || ((d.doseIndex ?? 99) === (cur.doseIndex ?? 99) && at(d) < at(cur));
+    if (better) first.set(d.medicationId, d);
+  }
+  return [...first.values()].map((d) => d.id);
 }
 
 export function dosesForDay(doses: DoseRecord[], medId: string, date: ISODate): DoseRecord[] {
   return doses.filter((d) => d.medicationId === medId && d.date === date);
 }
 
-/** Medication status for a day. Absence of a record is "not recorded", never "missed". */
-export function dayDoseStatus(doses: DoseRecord[], medId: string, date: ISODate): 'taken' | 'skipped' | 'not_recorded' {
-  const list = dosesForDay(doses, medId, date);
-  if (list.some((d) => d.status === 'taken')) return 'taken';
-  if (list.some((d) => d.status === 'skipped')) return 'skipped';
-  return 'not_recorded';
+export type DayDoseStatus = 'taken' | 'skipped' | 'partial' | 'not_recorded';
+
+/**
+ * Medication status for a day. Absence of a record is "not recorded", never
+ * "missed". With several doses a day: "taken" when every dose is recorded as
+ * taken, "skipped" when every recorded dose was skipped and all are recorded,
+ * otherwise "partial" (some recorded).
+ */
+export function dayDoseStatus(doses: DoseRecord[], med: Medication | string, date: ISODate): DayDoseStatus {
+  if (typeof med === 'string') {
+    const list = dosesForDay(doses, med, date);
+    if (list.some((d) => d.status === 'taken')) return 'taken';
+    if (list.some((d) => d.status === 'skipped')) return 'skipped';
+    return 'not_recorded';
+  }
+  const { slots } = daySlots(doses, med, date);
+  const recorded = slots.filter((s) => s.record);
+  if (recorded.length === 0) return 'not_recorded';
+  const taken = recorded.filter((s) => s.record!.status === 'taken').length;
+  if (taken === slots.length) return 'taken';
+  if (recorded.length === slots.length && taken === 0) return 'skipped';
+  if (slots.length === 1) return taken ? 'taken' : 'skipped';
+  return 'partial';
+}
+
+/** "1 of 2 taken" style text for a day (empty for once-a-day medicines). */
+export function dayDoseSummary(doses: DoseRecord[], med: Medication, date: ISODate): string {
+  const { slots } = daySlots(doses, med, date);
+  if (slots.length === 1) return '';
+  const taken = slots.filter((s) => s.record?.status === 'taken').length;
+  const skipped = slots.filter((s) => s.record?.status === 'skipped').length;
+  return `${taken} of ${slots.length} taken${skipped ? `, ${skipped} skipped` : ''}`;
 }
 
 export interface SupplyEstimate {

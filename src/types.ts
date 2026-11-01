@@ -69,9 +69,14 @@ export interface SupplySettings {
 
 export interface MedicationVersion {
   effectiveFrom: ISOInstant;
+  /** Local calendar day this version applies from (newer versions); older ones use effectiveFrom's date. */
+  effectiveDate?: ISODate;
   name: string;
   dose: string;
-  usualTime: string | null; // HH:mm
+  usualTime: string | null; // HH:mm (first dose time)
+  /** Scheduled doses per day and their times (older versions: once a day at usualTime). */
+  timesPerDay?: number;
+  doseTimes?: (string | null)[];
   instructions: string;
 }
 
@@ -79,7 +84,12 @@ export interface Medication {
   id: ID;
   name: string;
   dose: string;
+  /** Time of the first dose (kept for older code and backups; = doseTimes[0]). */
   usualTime: string | null;
+  /** How many times a day it is taken (1–6). Missing in older data = 1. */
+  timesPerDay?: number;
+  /** Usual time of each dose (HH:mm), one per dose; null = no set time. */
+  doseTimes?: (string | null)[];
   instructions: string;
   active: boolean;
   /** Minutes after the recorded dose time to remind for an after-medication
@@ -105,6 +115,9 @@ export interface DoseRecord {
   utcOffsetMinutes: number | null;
   /** Units consumed by this dose (only counted when status is 'taken'). */
   units: number | null;
+  /** Which scheduled dose this record is for: its position (0-based) and usual time. Missing = not specified (older records). */
+  doseIndex?: number | null;
+  scheduledTime?: string | null;
   nameSnapshot: string;
   doseSnapshot: string;
   notes: string;

@@ -167,3 +167,35 @@ describe('passcode lock screen', () => {
     expect(await screen.findByText(/your dashboard is empty/i, {}, { timeout: 5000 })).toBeInTheDocument();
   }, 20000);
 });
+
+describe('medication taken several times a day', () => {
+  it('adds a twice-a-day medicine and records each dose separately', async () => {
+    const user = userEvent.setup();
+    await renderApp('#/medication');
+    await screen.findByRole('heading', { level: 1, name: /Medication/ });
+    await user.click(screen.getByRole('button', { name: 'Add medication' }));
+    const dialog = await screen.findByRole('dialog');
+    await user.type(within(dialog).getByLabelText('Medication name'), 'Tablet Two');
+    await user.selectOptions(within(dialog).getByLabelText(/How many times a day/), '2');
+    await user.type(within(dialog).getByLabelText('Dose 1 time'), '08:00');
+    await user.type(within(dialog).getByLabelText('Dose 2 time'), '20:00');
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }));
+
+    expect(await screen.findByText(/2 times a day: 8:00 am, 8:00 pm/)).toBeInTheDocument();
+    expect(screen.getByText('0 of 2 taken')).toBeInTheDocument();
+
+    // Record the second dose directly.
+    await user.click(screen.getByRole('button', { name: 'Record taken: Dose 2 (8:00 pm)' }));
+    const form = await screen.findByRole('dialog');
+    expect(within(form).getByRole('radio', { name: /Dose 2 \(8:00 pm\)/ })).toBeChecked();
+    await user.click(within(form).getByRole('button', { name: 'Save dose record' }));
+    expect(await screen.findByText('1 of 2 taken')).toBeInTheDocument();
+
+    const saved = await loadAll('real');
+    expect(saved.medications[0]).toMatchObject({ timesPerDay: 2, doseTimes: ['08:00', '20:00'], usualTime: '08:00' });
+    expect(saved.doses).toHaveLength(1);
+    expect(saved.doses[0]).toMatchObject({ doseIndex: 1, scheduledTime: '20:00', status: 'taken' });
+    // The first dose can still be recorded.
+    expect(screen.getByRole('button', { name: 'Record taken: Dose 1 (8:00 am)' })).toBeInTheDocument();
+  }, 20000);
+});

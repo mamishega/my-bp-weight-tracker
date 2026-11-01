@@ -3,19 +3,21 @@ import { useRoute } from '../store/router';
 import { useStore } from '../store/Store';
 import { useDirtyForm } from '../store/dirty';
 import type { DoseRecord, DoseStatus, Medication, StockEvent } from '../types';
-import { DoseMark, DoseLegend, Badge, Button, Card, Checkbox, Empty, Modal, Notice, PageTitle, TextArea, TextField, useToast, Optional } from '../components/ui';
+import { DoseMark, DoseLegend, Badge, Button, Card, Checkbox, Empty, Modal, Notice, PageTitle, SelectField, TextArea, TextField, useToast, Optional } from '../components/ui';
 import { DoseForm } from '../components/DoseForm';
-import { dayDoseStatus, estimateSupply, updateMedication } from '../lib/medication';
-import { formatClock, formatDateShort, formatTime, isValidDate, isValidTime, localDateOf, nowTimeIn, todayIn, zonedToInstant, addDays, dateRange } from '../lib/time';
+import { MAX_TIMES_PER_DAY, dayDoseStatus, dayDoseSummary, daySlots, describeSchedule, doseLabel, estimateSupply, medSchedule, updateMedication } from '../lib/medication';
+import { formatDateShort, formatTime, isValidDate, isValidTime, localDateOf, nowTimeIn, todayIn, zonedToInstant, addDays, dateRange } from '../lib/time';
 import { uid } from '../lib/defaults';
 import { findDuplicateDoses } from '../lib/quality';
 
 function MedForm({ med, onClose }: { med?: Medication; onClose: () => void }) {
-  const { put } = useStore();
+  const { data, put } = useStore();
   const toast = useToast();
   const [name, setName] = useState(med?.name ?? '');
   const [dose, setDose] = useState(med?.dose ?? '');
-  const [time, setTime] = useState(med?.usualTime ?? '');
+  const initial = med ? medSchedule(med) : { perDay: 1, times: [null] };
+  const [perDayDoses, setPerDayDoses] = useState(initial.perDay);
+  const [times, setTimes] = useState<string[]>(initial.times.map((t) => t ?? ''));
   const [instr, setInstr] = useState(med?.instructions ?? '');
   const [active, setActive] = useState(med?.active ?? true);
   const [postMins, setPostMins] = useState(med?.postDoseReminderMinutes == null ? '' : String(med.postDoseReminderMinutes));
@@ -31,7 +33,7 @@ function MedForm({ med, onClose }: { med?: Medication; onClose: () => void }) {
   const save = async () => {
     const e: Record<string, string> = {};
     if (!name.trim()) e.name = 'Enter the medication name as prescribed.';
-    if (time && !isValidTime(time)) e.time = 'Enter a valid time.';
+    times.slice(0, perDayDoses).forEach((t, i) => { if (t && !isValidTime(t)) e[`time${i}`] = 'Enter a valid time, or leave blank.'; });
     const pm = postMins.trim() === '' ? null : Number(postMins);
     if (pm != null && (!Number.isInteger(pm) || pm < 1 || pm > 1440)) e.postMins = 'Enter whole minutes between 1 and 1440, or leave blank.';
     const pd = Number(perDay);
@@ -43,10 +45,12 @@ function MedForm({ med, onClose }: { med?: Medication; onClose: () => void }) {
     if (Object.keys(e).length) return;
     const now = new Date().toISOString();
     const supply = { enabled: supplyOn, unitsPerDay: pd || 1, refillThresholdUnits: th, renewalDate: renewal || null };
-    const fields = { name: name.trim(), dose: dose.trim(), usualTime: time || null, instructions: instr, active, postDoseReminderMinutes: pm, supply };
+    const doseTimes = Array.from({ length: perDayDoses }, (_, i) => times[i] || null);
+    const fields = { name: name.trim(), dose: dose.trim(), usualTime: doseTimes[0], timesPerDay: perDayDoses, doseTimes, instructions: instr, active, postDoseReminderMinutes: pm, supply };
+    const today = todayIn(data.settings.timeZone);
     const rec: Medication = med
-      ? updateMedication(med, fields, now)
-      : { id: uid(), ...fields, history: [{ effectiveFrom: now, name: fields.name, dose: fields.dose, usualTime: fields.usualTime, instructions: instr }], createdAt: now, updatedAt: now };
+      ? updateMedication(med, fields, now, today)
+      : { id: uid(), ...fields, history: [{ effectiveFrom: now, effectiveDate: today, name: fields.name, dose: fields.dose, usualTime: fields.usualTime, timesPerDay: perDayDoses, doseTimes, instructions: instr }], createdAt: now, updatedAt: now };
     await put('medications', rec);
     setDirty(false);
     toast(med ? 'Medication updated. Previous details are kept in its history.' : 'Medication added.');
@@ -54,11 +58,21 @@ function MedForm({ med, onClose }: { med?: Medication; onClose: () => void }) {
   };
 
   return (
-    <Modal open onClose={onClose} title={med ? `Edit ${med.name}` : 'Add morning medication'} footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" onClick={save}>Save</Button></>}>
+    <Modal open onClose={onClose} title={med ? `Edit ${med.name}` : 'Add medication'} footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" onClick={save}>Save</Button></>}>
       <div className="flex flex-col gap-4">
         <TextField label="Medication name" value={name} onChange={(e) => d(setName)(e.target.value)} error={err.name} />
         <TextField label="Dose" value={dose} onChange={(e) => d(setDose)(e.target.value)} hint="As written on your prescription, e.g. 10 mg, 1 tablet." optional />
-        <TextField label="Usual morning time" type="time" value={time} onChange={(e) => d(setTime)(e.target.value)} error={err.time} optional />
+        <SelectField label="How many times a day?" hint="As prescribed. Each dose is recorded separately." value={String(perDayDoses)} onChange={(e) => { setDirty(true); const n = Number(e.target.value); setPerDayDoses(n); setTimes((t) => Array.from({ length: n }, (_, i) => t[i] ?? '')); }}>
+          {Array.from({ length: MAX_TIMES_PER_DAY }, (_, i) => i + 1).map((n) => <option key={n} value={n}>{n === 1 ? 'Once a day' : `${n} times a day`}</option>)}
+        </SelectField>
+        <fieldset className="flex flex-col gap-3">
+          <legend className="mb-1 text-sm font-semibold text-slate-800">Usual time{perDayDoses > 1 ? ' of each dose' : ''} <span className="font-normal text-slate-500">(optional, used for reminders)</span></legend>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {Array.from({ length: perDayDoses }, (_, i) => (
+              <TextField key={i} label={perDayDoses === 1 ? 'Usual time' : `Dose ${i + 1} time`} type="time" value={times[i] ?? ''} onChange={(e) => { const v = e.target.value; setDirty(true); setTimes((t) => t.map((x, j) => (j === i ? v : x))); }} error={err[`time${i}`]} />
+            ))}
+          </div>
+        </fieldset>
         <TextArea label="Prescription instructions" value={instr} onChange={(e) => d(setInstr)(e.target.value)} optional />
         <TextField label="After-medication reading reminder (minutes after the recorded dose)" inputMode="numeric" value={postMins} onChange={(e) => d(setPostMins)(e.target.value)} error={err.postMins} optional hint="Only enter this if your clinician asked for after-medication readings, using the interval they gave you. The app does not suggest an interval." />
         <Checkbox label="Currently taking this medication" checked={active} onChange={d(setActive)} hint="Inactive medications stay in your history and reports." />
@@ -66,7 +80,7 @@ function MedForm({ med, onClose }: { med?: Medication; onClose: () => void }) {
           <Checkbox label="Track estimated supply" checked={supplyOn} onChange={d(setSupplyOn)} />
           {supplyOn && (
             <>
-              <TextField label="Prescribed units taken per day" inputMode="decimal" value={perDay} onChange={(e) => d(setPerDay)(e.target.value)} error={err.perDay} />
+ <TextField label="Prescribed units taken per day (all doses together)" inputMode="decimal" value={perDay} onChange={(e) => d(setPerDay)(e.target.value)} error={err.perDay} />
               <TextField label="Refill reminder when estimated units reach" inputMode="numeric" value={threshold} onChange={(e) => d(setThreshold)(e.target.value)} error={err.threshold} optional />
               <TextField label="Prescription renewal date" type="date" value={renewal} onChange={(e) => d(setRenewal)(e.target.value)} error={err.renewal} optional />
               <p className="text-sm text-slate-600">After saving, enter a manual count of units on hand to start the estimate.</p>
@@ -164,7 +178,7 @@ export function MedicationPage() {
   const today = todayIn(tz);
   const [edit, setEdit] = useState<Medication | 'new' | null>(null);
   const { params } = useRoute();
-  const [doseFor, setDoseFor] = useState<{ med: Medication; dose?: DoseRecord; status?: DoseStatus; date?: string } | null>(() => {
+  const [doseFor, setDoseFor] = useState<{ med: Medication; dose?: DoseRecord; status?: DoseStatus; date?: string; doseIndex?: number } | null>(() => {
     // Deep link from History: #/medication?dose=<id>
     const d = data.doses.find((x) => x.id === params.get('dose'));
     const m = d && data.medications.find((x) => x.id === d.medicationId);
@@ -179,19 +193,44 @@ export function MedicationPage() {
   return (
     <div className="flex flex-col gap-4">
       <PageTitle sub="Record each dose as you take it. The app never advises delaying, repeating, skipping, stopping or changing a dose." actions={<Button variant="primary" icon="plus" onClick={() => setEdit('new')}>Add medication</Button>}>Medication &amp; Supply</PageTitle>
-      {meds.length === 0 && <Empty>No medications yet. Add the morning medication(s) you have been prescribed.</Empty>}
+      {meds.length === 0 && <Empty>No medications yet. Add the medication(s) you have been prescribed.</Empty>}
       {meds.map((m) => {
-        const st = dayDoseStatus(data.doses, m.id, today);
+        const st = dayDoseStatus(data.doses, m, today);
+        const sched = medSchedule(m);
+        const { slots } = daySlots(data.doses, m, today);
         return (
           <Card key={m.id} icon="pill" title={<>{m.name} <span className="font-normal text-slate-700">{m.dose}</span> {!m.active && <Badge>Inactive</Badge>}</>} actions={<Button variant="ghost" icon="pencil" onClick={() => setEdit(m)}>Edit</Button>}>
-            <p className="text-slate-700">Usual time: {formatClock(m.usualTime)} · After-medication reminder: {m.postDoseReminderMinutes == null ? 'not set' : `${m.postDoseReminderMinutes} min after recorded dose (from your clinician’s instructions)`}</p>
+            <p className="text-slate-700">{describeSchedule(m)} · After-medication reminder: {m.postDoseReminderMinutes == null ? 'not set' : `${m.postDoseReminderMinutes} min after recorded dose (from your clinician’s instructions)`}</p>
             {m.instructions && <p className="mt-1 text-sm text-slate-700">Instructions: {m.instructions}</p>}
-            {m.active && (
+            {m.active && sched.perDay === 1 && (
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <span className="font-medium">Today:</span>
                 {st === 'not_recorded' ? <Badge>Not recorded</Badge> : st === 'taken' ? <Badge tone="ok">Taken</Badge> : <Badge tone="info" icon="skip">Skipped</Badge>}
-                <Button variant="primary" onClick={() => setDoseFor({ med: m, status: 'taken', date: today })}>Record taken</Button>
-                <Button onClick={() => setDoseFor({ med: m, status: 'skipped', date: today })}>Record skipped</Button>
+                <Button variant="primary" onClick={() => setDoseFor({ med: m, status: 'taken', date: today, doseIndex: 0 })}>Record taken</Button>
+                <Button onClick={() => setDoseFor({ med: m, status: 'skipped', date: today, doseIndex: 0 })}>Record skipped</Button>
+              </div>
+            )}
+            {m.active && sched.perDay > 1 && (
+              <div className="mt-3">
+                <p className="font-medium">Today: <span className="font-normal text-slate-700">{dayDoseSummary(data.doses, m, today)}</span></p>
+                <ul className="mt-2 flex flex-col divide-y divide-slate-100 rounded-lg ring-1 ring-slate-200">
+                  {slots.map((sl) => (
+                    <li key={sl.index} className="flex flex-wrap items-center gap-2 px-3 py-2">
+                      <span className="min-w-36 font-medium">{doseLabel(m, sl.index)}</span>
+                      {!sl.record ? <Badge>Not recorded</Badge> : sl.record.status === 'taken' ? <Badge tone="ok">Taken{sl.record.takenAt ? ` · ${formatTime(sl.record.takenAt, sl.record.timeZone, tz)}` : ' · time unknown'}</Badge> : <Badge tone="info" icon="skip">Skipped</Badge>}
+                      <span className="ml-auto flex gap-2">
+                        {!sl.record ? (
+                          <>
+                            <Button variant="primary" className="min-h-10 text-sm" onClick={() => setDoseFor({ med: m, status: 'taken', date: today, doseIndex: sl.index })}>Record taken<span className="sr-only">: {doseLabel(m, sl.index)}</span></Button>
+                            <Button className="min-h-10 text-sm" onClick={() => setDoseFor({ med: m, status: 'skipped', date: today, doseIndex: sl.index })}>Skipped<span className="sr-only">: {doseLabel(m, sl.index)}</span></Button>
+                          </>
+                        ) : (
+                          <Button variant="ghost" className="min-h-10 text-sm" onClick={() => setDoseFor({ med: m, dose: sl.record! })}>Edit<span className="sr-only">: {doseLabel(m, sl.index)}</span></Button>
+                        )}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
             <div tabIndex={0} className="mt-3 overflow-x-auto">
@@ -199,17 +238,18 @@ export function MedicationPage() {
                 <caption className="text-left text-sm font-medium">Last 14 days</caption>
                 <thead><tr>{days.map((d) => <th key={d} scope="col" className="px-1 font-normal text-slate-600">{d.slice(8)}</th>)}</tr></thead>
                 <tbody><tr>{days.map((d) => {
-                  const s = dayDoseStatus(data.doses, m.id, d);
-                  return <td key={d} className="px-1 py-1"><DoseMark status={s} label={formatDateShort(d)} /></td>;
+                  const s = dayDoseStatus(data.doses, m, d);
+                  const sum = dayDoseSummary(data.doses, m, d);
+                  return <td key={d} className="px-1 py-1"><DoseMark status={s} label={`${formatDateShort(d)}${sum ? ` (${sum})` : ''}`} /></td>;
                 })}</tr></tbody>
               </table>
-              <DoseLegend />
+              <DoseLegend partial={sched.perDay > 1} />
             </div>
             <SupplyPanel med={m} />
             {m.history.length > 1 && (
               <details className="mt-2"><summary className="cursor-pointer text-sm font-medium">Prescription history ({m.history.length} versions)</summary>
                 <ul className="mt-1 text-sm">
-                  {[...m.history].reverse().map((v, i) => <li key={i}>From {formatDateShort(localDateOf(v.effectiveFrom, tz))}: {v.name} {v.dose}, usual time {formatClock(v.usualTime)}{v.instructions && `, “${v.instructions}”`}</li>)}
+                  {[...m.history].reverse().map((v, i) => <li key={i}>From {formatDateShort(localDateOf(v.effectiveFrom, tz))}: {v.name} {v.dose}, {describeSchedule(v).toLowerCase()}{v.instructions && `, “${v.instructions}”`}</li>)}
                 </ul>
               </details>
             )}
@@ -228,7 +268,7 @@ export function MedicationPage() {
                   return (
                     <tr key={d.id} className="border-b border-slate-100">
                       <td className="p-2">{formatDateShort(d.date)}</td>
-                      <td className="p-2">{d.nameSnapshot} {d.doseSnapshot}</td>
+                      <td className="p-2">{d.nameSnapshot} {d.doseSnapshot}{med && medSchedule(med).perDay > 1 && d.doseIndex != null && <span className="block text-xs text-slate-500">{doseLabel(med, d.doseIndex)}</span>}</td>
                       <td className="p-2">{d.status === 'taken' ? <Badge tone="ok">Taken</Badge> : <Badge tone="info" icon="skip">Skipped</Badge>} {dupes.has(d.id) && <Badge tone="warn">Possible duplicate</Badge>}</td>
                       <td className="p-2">{d.status !== 'taken' ? '—' : d.takenAt ? formatTime(d.takenAt, d.timeZone, tz) : <Badge tone="warn">Medication time unknown</Badge>}</td>
                       <td className="p-2">{d.notes}</td>
@@ -247,7 +287,7 @@ export function MedicationPage() {
       <Notice tone="info">Missing a record never means a dose was missed — it only means nothing was recorded.</Notice>
 
       {edit && <MedForm med={edit === 'new' ? undefined : edit} onClose={() => setEdit(null)} />}
-      {doseFor && <DoseForm open med={doseFor.med} existing={doseFor.dose} initialStatus={doseFor.status} date={doseFor.date} onClose={() => setDoseFor(null)} />}
+      {doseFor && <DoseForm open med={doseFor.med} existing={doseFor.dose} initialStatus={doseFor.status} date={doseFor.date} doseIndex={doseFor.doseIndex} onClose={() => setDoseFor(null)} />}
       <Modal open={!!delDose} onClose={() => setDelDose(null)} title="Delete dose record?" footer={<><Button onClick={() => setDelDose(null)}>Keep</Button><Button variant="danger" onClick={async () => { await remove('doses', delDose!.id); setDelDose(null); }}>Delete</Button></>}>
         <p>The estimated supply will be recalculated automatically. Readings linked to this dose will show “No dose linked”.</p>
       </Modal>

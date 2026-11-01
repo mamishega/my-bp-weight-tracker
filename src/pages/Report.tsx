@@ -7,7 +7,7 @@ import { StatsTable } from './Trends';
 import { SESSION_LABEL, CONDITION_LABEL, fmt, fmtBP, prePostComparison, sessionAverage } from '../lib/bp';
 import { addDays, dateRange, formatClock, formatDateLong, formatDateShort, formatDuration, formatOffset, formatTime, isValidDate, localDateOf, todayIn } from '../lib/time';
 import { QUALITY_LABEL, findDuplicateSessions, sessionFlags } from '../lib/quality';
-import { dayDoseStatus, doseTiming } from '../lib/medication';
+import { describeSchedule, doseCounts, doseTiming, medSchedule } from '../lib/medication';
 import { fmtWeight, movingAverage7, describeChange } from '../lib/weight';
 import { lifestyleSummary } from './SymptomsLifestyle';
 import { SAFETY_STATEMENT } from '../lib/guidance';
@@ -80,16 +80,21 @@ export function ReportBody({ data, from, to, today, opt, patientName, preparedNo
       <H>Medications</H>
       {medsInPeriod.length === 0 ? <p>No medications recorded.</p> : medsInPeriod.map((m) => (
         <div key={m.id} className="mt-2 break-inside-avoid">
-          <p className="font-semibold">{m.name} {m.dose} — usual time {formatClock(m.usualTime)} {!m.active && '(no longer active)'}</p>
+          <p className="font-semibold">{m.name} {m.dose} — {describeSchedule(m).toLowerCase()} {!m.active && '(no longer active)'}</p>
           {m.instructions && <p className="text-sm">Instructions: {m.instructions}</p>}
-          {m.history.length > 1 && <ul className="text-sm">{m.history.map((v, i) => <li key={i}>From {formatDateShort(localDateOf(v.effectiveFrom, tz))}: {v.name} {v.dose}, usual {formatClock(v.usualTime)}</li>)}</ul>}
-          <p className="text-sm">In this period: {days.filter((d) => dayDoseStatus(data.doses, m.id, d) === 'taken').length} days recorded as taken, {days.filter((d) => dayDoseStatus(data.doses, m.id, d) === 'skipped').length} skipped, {days.filter((d) => dayDoseStatus(data.doses, m.id, d) === 'not_recorded').length} not recorded.</p>
+          {m.history.length > 1 && <ul className="text-sm">{m.history.map((v, i) => <li key={i}>From {formatDateShort(localDateOf(v.effectiveFrom, tz))}: {v.name} {v.dose}, {describeSchedule(v).toLowerCase()}</li>)}</ul>}
+          {(() => {
+            const c = doseCounts(data.doses, m, days);
+            return medSchedule(m).perDay > 1
+              ? <p className="text-sm">In this period: {c.taken} of {c.expected} scheduled doses recorded as taken, {c.skipped} skipped, {c.notRecorded} not recorded.</p>
+              : <p className="text-sm">In this period: {c.taken} days recorded as taken, {c.skipped} skipped, {c.notRecorded} not recorded.</p>;
+          })()}
         </div>
       ))}
       {doses.length > 0 && (
         <table className="mt-2 w-full text-left text-xs">
           <thead><tr className="border-b"><th className="p-1">Date</th><th className="p-1">Medication (as recorded)</th><th className="p-1">Status</th><th className="p-1">Actual time</th>{opt('doseNotes') && <th className="p-1">Notes</th>}</tr></thead>
-          <tbody>{doses.map((d) => <tr key={d.id} className="border-b border-slate-200"><td className="p-1">{formatDateShort(d.date)}</td><td className="p-1">{d.nameSnapshot} {d.doseSnapshot}</td><td className="p-1">{d.status}</td><td className="p-1">{d.status === 'taken' ? (d.takenAt ? formatTime(d.takenAt, d.timeZone, tz) : 'Medication time unknown') : '—'}</td>{opt('doseNotes') && <td className="p-1">{d.notes}</td>}</tr>)}</tbody>
+          <tbody>{doses.map((d) => <tr key={d.id} className="border-b border-slate-200"><td className="p-1">{formatDateShort(d.date)}</td><td className="p-1">{d.nameSnapshot} {d.doseSnapshot}{d.doseIndex != null && (() => { const med = data.medications.find((x) => x.id === d.medicationId); return med && medSchedule(med).perDay > 1 ? ` · dose ${d.doseIndex + 1}${d.scheduledTime ? ` (${formatClock(d.scheduledTime)})` : ''}` : ''; })()}</td><td className="p-1">{d.status}</td><td className="p-1">{d.status === 'taken' ? (d.takenAt ? formatTime(d.takenAt, d.timeZone, tz) : 'Medication time unknown') : '—'}</td>{opt('doseNotes') && <td className="p-1">{d.notes}</td>}</tr>)}</tbody>
         </table>
       )}
 

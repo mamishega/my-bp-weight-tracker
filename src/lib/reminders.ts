@@ -1,6 +1,6 @@
 import type { AppData } from '../types';
 import { zonedToInstant, todayIn, daysBetween, formatTime, formatDateShort, formatDuration } from './time';
-import { estimateSupply } from './medication';
+import { daySlots, estimateSupply } from './medication';
 
 export interface DueReminder {
   /** Unique per occurrence, e.g. "evening:2026-11-01". */
@@ -29,11 +29,16 @@ export function dueReminders(d: AppData, now: Date = new Date()): DueReminder[] 
     out.push({ key: `morningPre:${today}`, kind: 'morningPre', title: 'Morning reading (before medication)', body: 'When you are ready, rest for 5 minutes and take your morning reading.', dueAt: at(r.morningPre.time), href: '#/add?type=morning_pre' });
   }
   if (r.medication.enabled) {
-    for (const m of d.medications.filter((m) => m.active && m.usualTime)) {
-      const due = at(m.usualTime!);
-      const recorded = d.doses.some((x) => x.medicationId === m.id && x.date === today);
-      if (due <= nowIso && !recorded) {
-        out.push({ key: `medication:${m.id}:${today}`, kind: 'medication', title: `Morning medication: ${m.name}`, body: `Your usual time is ${formatTime(due, tz)}. Record whether you have taken it or not.`, dueAt: due, href: '#/medication' });
+    for (const m of d.medications.filter((m) => m.active)) {
+      const { slots } = daySlots(d.doses, m, today);
+      for (const sl of slots) {
+        if (!sl.time || sl.record) continue;
+        const due = at(sl.time);
+        if (due > nowIso) continue;
+        const which = slots.length > 1 ? ` — dose ${sl.index + 1} of ${slots.length}` : '';
+        // Once-a-day keeps its original key so existing snoozes/dismissals still apply.
+        const key = slots.length > 1 ? `medication:${m.id}:${sl.index}:${today}` : `medication:${m.id}:${today}`;
+        out.push({ key, kind: 'medication', title: `Medication: ${m.name}${which}`, body: `Your usual time is ${formatTime(due, tz)}. Record whether you have taken it or not.`, dueAt: due, href: '#/medication' });
       }
     }
   }
@@ -41,6 +46,8 @@ export function dueReminders(d: AppData, now: Date = new Date()): DueReminder[] 
     for (const dose of d.doses.filter((x) => x.date === today && x.status === 'taken' && x.takenAt)) {
       const med = d.medications.find((m) => m.id === dose.medicationId);
       if (!med || med.postDoseReminderMinutes == null) continue;
+      // After-medication readings belong to the morning session: only the first dose of the day prompts one.
+      if (daySlots(d.doses, med, today).slots[0]?.record?.id !== dose.id) continue;
       const due = new Date(new Date(dose.takenAt!).getTime() + med.postDoseReminderMinutes * 60000).toISOString();
       const done = d.sessions.some((s) => s.sessionType === 'morning_post' && (s.linkedDoseIds.includes(dose.id) || (s.date === today && s.measuredAt >= dose.takenAt!)));
       if (due <= nowIso && !done) {
