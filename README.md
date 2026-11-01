@@ -92,7 +92,7 @@ None of the Australian consumer sources above gives a blood pressure number that
 *Settings → Cloud backup and sync* keeps an encrypted copy of every record online and keeps your devices in step.
 
 - **Recovery key.** A 32-character recovery key (160 random bits, Crockford base32, shown once for you to save) is the only way in. HKDF-SHA-256 derives the relay record id, a proof for reading and writing, and the AES-256-GCM key from it. The payload is gzip-compressed, then encrypted with the id as associated data. The relay stores only ciphertext plus a SHA-256 hash of the proof. The key itself lives in your settings, so the passcode lock encrypts it, and it's never part of the uploaded copy.
-- **Sync.** About 4 seconds after a change, on opening, when back online, and every 2 minutes while visible, the device downloads the cloud copy and merges it. Per record the newest `updatedAt` wins. Deletions are kept as tombstones (collection, id and time only; 400 days), so a deleted record stays deleted unless it was edited later. Newer settings win, except this device's sync choice and notification permission. Uploads carry a version number: the relay rejects a stale one (409), so the device merges again and retries, and two devices can't overwrite each other.
+- **Sync.** About 4 seconds after a change, on opening, when back online, and every 2 minutes while visible, the device downloads the cloud copy and merges it. Per record the newest `updatedAt` wins. Deletions are kept as tombstones (collection, id and time only; 400 days), so a deleted record stays deleted unless it was edited later. Settings merge one setting at a time: each setting remembers when it last changed, and the later change wins. A measurement week started on the phone therefore survives a reminder change made on the computer. Each device keeps its own sync choice and notification permission. When a doctor link is shared between synced devices, a device that synced in the last 10 minutes takes over updating the link instead of stopping. Uploads carry a version number: the relay rejects a stale one (409), so the device merges again and retries, and two devices can't overwrite each other.
 - **Another device:** *I have a recovery key* finds the backup and offers **Combine** (union, recommended; the cloud copy's settings are used) or **Replace**. *Turn off on this device* keeps both copies. *Delete cloud backup* removes the online copy. A cloud copy unused for 400 days expires.
 
 ## Storage, privacy and backups
@@ -175,7 +175,7 @@ Limitations: the free KV tier allows 1,000 writes a day. That is far more than o
 
 ## Testing
 
-`npm test` runs 285 tests (all passing). Main areas:
+`npm test` runs 288 tests (all passing). Main areas:
 
 | Area | File |
 |---|---|

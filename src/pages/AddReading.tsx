@@ -71,7 +71,7 @@ function ReadingForm({ existing, initialType }: { existing?: BPSession; initialT
 
   const touch = () => setDirty(true);
   // "Same as last time": the arm and monitor of the most recent session (conditions are never copied: they change each time).
-  const last = existing ? null : [...data.sessions].sort((a, b) => b.measuredAt.localeCompare(a.measuredAt))[0];
+  const last = existing ? null : [...data.sessions].sort((a, b) => b.measuredAt.localeCompare(a.measuredAt)).find((x) => x.arm || (x.monitorId && settings.monitors.some((m) => m.id === x.monitorId)));
   const lastMonitorOk = !!last?.monitorId && settings.monitors.some((m) => m.id === last.monitorId);
   const canCopyLast = !!last && (!!last.arm || lastMonitorOk) && ((last.arm ?? '') !== arm || (lastMonitorOk ? last.monitorId : monitorId) !== monitorId);
   const setReading = (i: number, k: keyof ReadingInput, v: string) => {

@@ -330,3 +330,30 @@ describe('share settings and backups', () => {
     expect(relativeTime(now - 2 * 86_400_000, now)).toBe('2 days ago');
   });
 });
+
+describe('doctor link with cloud sync on', () => {
+  let server: ReturnType<typeof installFakeShareServer>;
+  beforeEach(() => {
+    vi.stubEnv('VITE_SHARE_API_URL', TEST_API);
+    server = installFakeShareServer();
+    _resetSyncForTests();
+    localStorage.clear();
+  });
+  afterEach(() => {
+    server.restore();
+    vi.unstubAllEnvs();
+  });
+  it('a second device that is in sync takes over updating the link instead of stopping', async () => {
+    const { syncVault, generateRecoveryKey, _resetVaultForTests } = await import('../lib/vault');
+    _resetVaultForTests();
+    let data = realData();
+    const cfg = await createShare(data, DEFAULT_SHARE_OPTIONS, 30);
+    // Second device: different device id, cloud sync on and just synced.
+    localStorage.setItem('bpt-device-id', 'second-device-0002');
+    data = { ...data, settings: { ...data.settings, share: cfg, vault: { key: generateRecoveryKey(), enabledAt: '' } }, sessions: [...data.sessions, { ...data.sessions[0], id: 'from-second', notes: 'second' }] };
+    await syncVault(() => data, async (d) => { data = d; });
+    await requestSync(data, { force: true });
+    expect(getSyncStatus(cfg.id).state).toBe('ok');
+    expect((await fetchShared(cfg.id, cfg.key)).snapshot.data.sessions.some((s) => s.id === 'from-second')).toBe(true);
+  });
+});

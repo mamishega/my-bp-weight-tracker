@@ -170,3 +170,27 @@ describe('sync through the relay (two devices)', () => {
     expect(A.get().sessions).toHaveLength(1);
   });
 });
+
+describe('settings merge one setting at a time', () => {
+  const base = () => ({ ...emptyData().settings, updatedAt: '2026-10-01T00:00:00Z' });
+  it('a measurement week started on one device survives a reminder change on another', async () => {
+    const { stampSettings, mergeSettings } = await import('../lib/vault');
+    const start = base();
+    // Phone starts a week at 09:00; computer changes the evening reminder at 10:00.
+    const phone = stampSettings(start, { ...start, measurementWeeks: [{ id: 'w', startDate: '2026-11-02', days: 7, createdAt: '' }] }, '2026-11-01T09:00:00Z');
+    const computer = stampSettings(start, { ...start, reminders: { ...start.reminders, evening: { enabled: true, time: '20:15' } } }, '2026-11-01T10:00:00Z');
+    for (const m of [mergeSettings(phone, computer), mergeSettings(computer, phone)]) {
+      expect(m.measurementWeeks).toHaveLength(1);
+      expect(m.reminders.evening).toEqual({ enabled: true, time: '20:15' });
+    }
+  });
+  it('the later change to the same setting wins; unchanged settings keep their old time', async () => {
+    const { stampSettings, mergeSettings } = await import('../lib/vault');
+    const start = base();
+    const a = stampSettings(start, { ...start, targets: { ...start.targets, systolic: 140 } }, '2026-11-01T09:00:00Z');
+    const b = stampSettings(start, { ...start, targets: { ...start.targets, systolic: 135 } }, '2026-11-01T11:00:00Z');
+    expect(mergeSettings(a, b).targets.systolic).toBe(135);
+    expect(mergeSettings(b, a).targets.systolic).toBe(135);
+    expect(b.fieldTimes?.reminders).toBe('2026-10-01T00:00:00Z');
+  });
+});

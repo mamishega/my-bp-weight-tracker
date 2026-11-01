@@ -3,6 +3,7 @@ import { COLLECTIONS, type AppData, type CollectionName, type Collections, type 
 import * as db from '../db/db';
 import { emptyData } from '../lib/defaults';
 import { buildDemoData } from '../lib/demo';
+import { mergeSettings, stampSettings } from '../lib/vault';
 import { deviceTimeZone } from '../lib/time';
 
 const MODE_KEY = 'bpt-data-mode';
@@ -133,7 +134,8 @@ export function StoreProvider({ children, initialMode }: { children: ReactNode; 
   }, []);
 
   const saveSettings = useCallback(async (s: Settings) => {
-    const next = { ...s, updatedAt: new Date().toISOString() };
+    // Remember which settings changed and when, so devices can merge them one by one.
+    const next = stampSettings(dataRef.current.settings, s, new Date().toISOString());
     await db.putKV(modeRef.current, next);
     setData((d) => ({ ...d, settings: next }));
     notify();
@@ -173,8 +175,10 @@ export function StoreProvider({ children, initialMode }: { children: ReactNode; 
       if (c.put.length) await db.putRecords(m, c.name, c.put as never);
       for (const id of c.del) await db.deleteRecord(m, c.name, id);
     }
-    const settingsNewer = target.settings.updatedAt > cur.settings.updatedAt;
-    if (settingsNewer) await db.putKV(m, { ...target.settings, vault: dataRef.current.settings.vault ?? null, notificationsEnabled: dataRef.current.settings.notificationsEnabled });
+    // Merge settings one by one against what's here now (a setting changed meanwhile is kept).
+    const mergedSettings = mergeSettings(dataRef.current.settings, target.settings);
+    const settingsChanged = JSON.stringify(mergedSettings) !== JSON.stringify(dataRef.current.settings);
+    if (settingsChanged) await db.putKV(m, mergedSettings);
     const tombstones = new Map([...(dataRef.current.meta.tombstones ?? []), ...(target.meta.tombstones ?? [])].map((t) => [`${t.c}|${t.id}`, t]));
     const meta = { ...dataRef.current.meta, tombstones: [...tombstones.values()] };
     await db.putKV(m, meta);
@@ -186,7 +190,7 @@ export function StoreProvider({ children, initialMode }: { children: ReactNode; 
         for (const id of c.del) map.delete(id);
         (next as unknown as Record<string, unknown>)[c.name] = [...map.values()];
       }
-      if (settingsNewer) next.settings = { ...target.settings, vault: d.settings.vault ?? null, notificationsEnabled: d.settings.notificationsEnabled };
+      if (settingsChanged) next.settings = mergeSettings(d.settings, target.settings);
       return next;
     });
     notify();

@@ -163,10 +163,48 @@ export function mergeData(local: AppData, remote: VaultPayload): AppData {
     });
   }
   const rs = remote.data.settings as Settings | undefined;
-  const newer = rs && rs.updatedAt > local.settings.updatedAt ? rs : local.settings;
-  out.settings = { ...newer, vault: local.settings.vault ?? null, notificationsEnabled: local.settings.notificationsEnabled };
+  out.settings = rs ? mergeSettings(local.settings, rs) : local.settings;
   out.meta = { ...local.meta, tombstones };
   return out;
+}
+
+const DEVICE_ONLY = new Set(['id', 'updatedAt', 'fieldTimes', 'vault', 'notificationsEnabled']);
+
+/**
+ * Merge settings one setting at a time: for each one, the copy changed most
+ * recently wins (older data without per-setting times falls back to when the
+ * settings were last saved). This device keeps its own sync choice and
+ * notification permission.
+ */
+export function mergeSettings(local: Settings, remote: Settings): Settings {
+  const out: Record<string, unknown> = { ...local };
+  const times: Record<string, string> = { ...(local.fieldTimes ?? {}) };
+  const keys = new Set([...Object.keys(local), ...Object.keys(remote)].filter((k) => !DEVICE_ONLY.has(k)));
+  for (const k of keys) {
+    const lt = local.fieldTimes?.[k] ?? local.updatedAt;
+    const rt = remote.fieldTimes?.[k] ?? remote.updatedAt;
+    if (rt > lt && k in remote) {
+      out[k] = (remote as unknown as Record<string, unknown>)[k];
+      times[k] = rt;
+    }
+  }
+  out.fieldTimes = times;
+  out.updatedAt = remote.updatedAt > local.updatedAt ? remote.updatedAt : local.updatedAt;
+  out.vault = local.vault ?? null;
+  out.notificationsEnabled = local.notificationsEnabled;
+  return out as unknown as Settings;
+}
+
+/** Stamp the settings that changed (used when saving settings). */
+export function stampSettings(prev: Settings, next: Settings, now: string): Settings {
+  const times: Record<string, string> = { ...(prev.fieldTimes ?? {}), ...(next.fieldTimes ?? {}) };
+  for (const k of Object.keys(next)) {
+    if (DEVICE_ONLY.has(k)) continue;
+    // Settings without a time yet keep the time of the previous save, not "now".
+    if (!times[k]) times[k] = prev.updatedAt;
+    if (JSON.stringify((prev as unknown as Record<string, unknown>)[k]) !== JSON.stringify((next as unknown as Record<string, unknown>)[k])) times[k] = now;
+  }
+  return { ...next, fieldTimes: times, updatedAt: now };
 }
 
 export function toPayload(d: AppData): VaultPayload {

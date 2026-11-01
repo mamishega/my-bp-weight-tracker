@@ -313,6 +313,8 @@ export interface Settings {
   measurementWeeks?: MeasurementWeek[];
   /** Cloud backup and sync on this device (kept per device; never taken from another device). */
   vault?: VaultConfig | null;
+  /** When each setting was last changed, so devices can merge settings one by one. */
+  fieldTimes?: Record<string, ISOInstant>;
   updatedAt: ISOInstant;
 }
 

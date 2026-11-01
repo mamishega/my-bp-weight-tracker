@@ -14,6 +14,7 @@
 import type { AppData, ISODate, ShareConfig, ShareOptions } from '../types';
 import { addDays, todayIn } from './time';
 import { DEFAULT_SHARE_OPTIONS, defaultSettings, emptyData } from './defaults';
+import { getVaultStatus } from './vault';
 
 export const SHARE_APP_ID = 'my-bp-weight-tracker-share';
 export const SHARE_WINDOWS = [30, 90, 180, 365] as const;
@@ -476,6 +477,12 @@ async function uploadOnce(data: AppData, force: boolean, takeover = false) {
     rememberUpload(cfg.id, hash);
   } catch (e) {
     if (e instanceof ShareHttpError && e.status === 409) {
+      // With cloud sync working, this device has the same records as the other one,
+      // so it can safely take over updating the link instead of stopping.
+      const v = getVaultStatus();
+      if (!takeover && data.settings.vault && v.state === 'ok' && v.lastSyncAt && Date.now() - v.lastSyncAt < 10 * 60_000) {
+        return uploadOnce(data, true, true);
+      }
       setStatus(cfg.id, { ...getSyncStatus(cfg.id), state: 'other-device', message: 'Another device is now updating this link, so this device has stopped, to avoid replacing newer records with older ones.' });
       return;
     }
