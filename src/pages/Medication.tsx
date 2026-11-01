@@ -2,10 +2,10 @@ import { useState } from 'react';
 import { useRoute } from '../store/router';
 import { useStore } from '../store/Store';
 import { useDirtyForm } from '../store/dirty';
-import type { DoseRecord, DoseStatus, Medication, StockEvent } from '../types';
+import type { DoseRecord, DoseStatus, MedFrequency, Medication, StockEvent } from '../types';
 import { DoseMark, DoseLegend, Badge, Button, Card, Checkbox, Empty, Modal, Notice, PageTitle, SelectField, TextArea, TextField, useToast, Optional } from '../components/ui';
 import { DoseForm } from '../components/DoseForm';
-import { MAX_TIMES_PER_DAY, dayDoseStatus, dayDoseSummary, daySlots, describeSchedule, doseLabel, estimateSupply, medSchedule, updateMedication } from '../lib/medication';
+import { MAX_TIMES_PER_DAY, medFrequency, dayDoseStatus, dayDoseSummary, daySlots, describeSchedule, doseLabel, estimateSupply, medSchedule, updateMedication } from '../lib/medication';
 import { formatDateShort, formatTime, isValidDate, isValidTime, localDateOf, nowTimeIn, todayIn, zonedToInstant, addDays, dateRange } from '../lib/time';
 import { uid } from '../lib/defaults';
 import { findDuplicateDoses } from '../lib/quality';
@@ -18,6 +18,12 @@ function MedForm({ med, onClose }: { med?: Medication; onClose: () => void }) {
   const initial = med ? medSchedule(med) : { perDay: 1, times: [null] };
   const [perDayDoses, setPerDayDoses] = useState(initial.perDay);
   const [times, setTimes] = useState<string[]>(initial.times.map((t) => t ?? ''));
+  const f0 = med ? medFrequency(med) : { kind: 'daily' as const };
+  const [freqKind, setFreqKind] = useState<MedFrequency['kind']>(f0.kind);
+  const [weekdays, setWeekdays] = useState<number[]>(f0.kind === 'weekly' ? f0.days : [1]);
+  const [everyDays, setEveryDays] = useState(String(f0.kind === 'interval' ? f0.everyDays : 2));
+  const [intervalStart, setIntervalStart] = useState(f0.kind === 'interval' ? f0.startDate : todayIn(data.settings.timeZone));
+  const [endDate, setEndDate] = useState(med?.endDate ?? '');
   const [instr, setInstr] = useState(med?.instructions ?? '');
   const [active, setActive] = useState(med?.active ?? true);
   const [postMins, setPostMins] = useState(med?.postDoseReminderMinutes == null ? '' : String(med.postDoseReminderMinutes));
@@ -41,16 +47,22 @@ function MedForm({ med, onClose }: { med?: Medication; onClose: () => void }) {
     const th = threshold.trim() === '' ? null : Number(threshold);
     if (th != null && (!Number.isFinite(th) || th < 0)) e.threshold = 'Enter 0 or more, or leave blank.';
     if (renewal && !isValidDate(renewal)) e.renewal = 'Enter a valid date.';
+    if (freqKind === 'weekly' && weekdays.length === 0) e.weekdays = 'Choose at least one day.';
+    const ed = Number(everyDays);
+    if (freqKind === 'interval' && (!Number.isInteger(ed) || ed < 2 || ed > 90)) e.everyDays = 'Enter a whole number of days from 2 to 90.';
+    if (freqKind === 'interval' && !isValidDate(intervalStart)) e.intervalStart = 'Enter the date of a dose day.';
+    if (endDate && !isValidDate(endDate)) e.endDate = 'Enter a valid date, or leave blank.';
     setErr(e);
     if (Object.keys(e).length) return;
     const now = new Date().toISOString();
     const supply = { enabled: supplyOn, unitsPerDay: pd || 1, refillThresholdUnits: th, renewalDate: renewal || null };
     const doseTimes = Array.from({ length: perDayDoses }, (_, i) => times[i] || null);
-    const fields = { name: name.trim(), dose: dose.trim(), usualTime: doseTimes[0], timesPerDay: perDayDoses, doseTimes, instructions: instr, active, postDoseReminderMinutes: pm, supply };
+    const frequency: MedFrequency = freqKind === 'weekly' ? { kind: 'weekly', days: [...weekdays].sort() } : freqKind === 'interval' ? { kind: 'interval', everyDays: ed, startDate: intervalStart } : { kind: freqKind };
+    const fields = { name: name.trim(), dose: dose.trim(), usualTime: doseTimes[0], timesPerDay: perDayDoses, doseTimes, frequency, endDate: endDate || null, instructions: instr, active, postDoseReminderMinutes: pm, supply };
     const today = todayIn(data.settings.timeZone);
     const rec: Medication = med
       ? updateMedication(med, fields, now, today)
-      : { id: uid(), ...fields, history: [{ effectiveFrom: now, effectiveDate: today, name: fields.name, dose: fields.dose, usualTime: fields.usualTime, timesPerDay: perDayDoses, doseTimes, instructions: instr }], createdAt: now, updatedAt: now };
+      : { id: uid(), ...fields, history: [{ effectiveFrom: now, effectiveDate: today, name: fields.name, dose: fields.dose, usualTime: fields.usualTime, timesPerDay: perDayDoses, doseTimes, frequency, endDate: endDate || null, instructions: instr }], createdAt: now, updatedAt: now };
     await put('medications', rec);
     setDirty(false);
     toast(med ? 'Medication updated. Previous details are kept in its history.' : 'Medication added.');
@@ -62,9 +74,36 @@ function MedForm({ med, onClose }: { med?: Medication; onClose: () => void }) {
       <div className="flex flex-col gap-4">
         <TextField label="Medication name" value={name} onChange={(e) => d(setName)(e.target.value)} error={err.name} />
         <TextField label="Dose" value={dose} onChange={(e) => d(setDose)(e.target.value)} hint="As written on your prescription, e.g. 10 mg, 1 tablet." optional />
-        <SelectField label="How many times a day?" hint="As prescribed. Each dose is recorded separately." value={String(perDayDoses)} onChange={(e) => { setDirty(true); const n = Number(e.target.value); setPerDayDoses(n); setTimes((t) => Array.from({ length: n }, (_, i) => t[i] ?? '')); }}>
-          {Array.from({ length: MAX_TIMES_PER_DAY }, (_, i) => i + 1).map((n) => <option key={n} value={n}>{n === 1 ? 'Once a day' : `${n} times a day`}</option>)}
+ <SelectField label="How often?" value={freqKind} onChange={(e) => { setDirty(true); setFreqKind(e.target.value as MedFrequency['kind']); }}>
+          <option value="daily">Every day</option>
+          <option value="weekly">On certain days of the week</option>
+          <option value="interval">Every few days</option>
+          <option value="as_needed">Only when needed</option>
         </SelectField>
+        {freqKind === 'weekly' && (
+          <fieldset>
+            <legend className="mb-1 text-sm font-semibold text-slate-800">Which days?</legend>
+            <div className="flex flex-wrap gap-2">
+              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((dn, i) => (
+                <label key={dn} className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border border-slate-300 px-3">
+                  <input type="checkbox" className="h-5 w-5 accent-teal-700" checked={weekdays.includes(i)} onChange={(e) => { setDirty(true); setWeekdays((w) => (e.target.checked ? [...w, i] : w.filter((x) => x !== i))); }} /> {dn}
+                </label>
+              ))}
+            </div>
+            {err.weekdays && <p role="alert" className="mt-1 text-sm font-medium text-red-700">{err.weekdays}</p>}
+          </fieldset>
+        )}
+        {freqKind === 'interval' && (
+          <div className="grid gap-3 sm:grid-cols-2">
+            <TextField label="Every how many days?" inputMode="numeric" value={everyDays} onChange={(e) => d(setEveryDays)(e.target.value)} error={err.everyDays} hint="e.g. 2 = every second day" />
+            <TextField label="A day it was (or will be) taken" type="date" value={intervalStart} onChange={(e) => d(setIntervalStart)(e.target.value)} error={err.intervalStart} hint="Used to work out the dose days." />
+          </div>
+        )}
+        {freqKind === 'as_needed' && <p className="text-sm text-slate-600">Record each dose when you take it. Days without a dose aren’t shown as “not recorded”, and there are no reminders.</p>}
+        {freqKind !== 'as_needed' && <SelectField label={freqKind === 'daily' ? 'How many times a day?' : 'How many times on each of those days?'} hint="As prescribed. Each dose is recorded separately." value={String(perDayDoses)} onChange={(e) => { setDirty(true); const n = Number(e.target.value); setPerDayDoses(n); setTimes((t) => Array.from({ length: n }, (_, i) => t[i] ?? '')); }}>
+          {Array.from({ length: MAX_TIMES_PER_DAY }, (_, i) => i + 1).map((n) => <option key={n} value={n}>{n === 1 ? (freqKind === 'daily' ? 'Once a day' : 'Once') : `${n} times${freqKind === 'daily' ? ' a day' : ''}`}</option>)}
+        </SelectField>}
+        {freqKind !== 'as_needed' && (
         <fieldset className="flex flex-col gap-3">
           <legend className="mb-1 text-sm font-semibold text-slate-800">Usual time{perDayDoses > 1 ? ' of each dose' : ''} <span className="font-normal text-slate-500">(optional, used for reminders)</span></legend>
           <div className="grid gap-3 sm:grid-cols-2">
@@ -73,6 +112,8 @@ function MedForm({ med, onClose }: { med?: Medication; onClose: () => void }) {
             ))}
           </div>
         </fieldset>
+        )}
+        <TextField label="Last day of the course" type="date" optional value={endDate} onChange={(e) => d(setEndDate)(e.target.value)} error={err.endDate} hint="Only if it’s a set course. After this day no doses are expected." />
         <TextArea label="Prescription instructions" value={instr} onChange={(e) => d(setInstr)(e.target.value)} optional />
         <TextField label="After-medication reading reminder (minutes after the recorded dose)" inputMode="numeric" value={postMins} onChange={(e) => d(setPostMins)(e.target.value)} error={err.postMins} optional hint="Only enter this if your clinician asked for after-medication readings, using the interval they gave you. The app does not suggest an interval." />
         <Checkbox label="Currently taking this medication" checked={active} onChange={d(setActive)} hint="Inactive medications stay in your history and reports." />
@@ -80,7 +121,7 @@ function MedForm({ med, onClose }: { med?: Medication; onClose: () => void }) {
           <Checkbox label="Track estimated supply" checked={supplyOn} onChange={d(setSupplyOn)} />
           {supplyOn && (
             <>
- <TextField label="Prescribed units taken per day (all doses together)" inputMode="decimal" value={perDay} onChange={(e) => d(setPerDay)(e.target.value)} error={err.perDay} />
+ <TextField label={freqKind === 'as_needed' ? 'Usual units per dose' : freqKind === 'daily' ? 'Prescribed units taken per day (all doses together)' : 'Units taken on a dose day (all doses together)'} inputMode="decimal" value={perDay} onChange={(e) => d(setPerDay)(e.target.value)} error={err.perDay} />
               <TextField label="Refill reminder when estimated units reach" inputMode="numeric" value={threshold} onChange={(e) => d(setThreshold)(e.target.value)} error={err.threshold} optional />
               <TextField label="Prescription renewal date" type="date" value={renewal} onChange={(e) => d(setRenewal)(e.target.value)} error={err.renewal} optional />
               <p className="text-sm text-slate-600">After saving, enter a manual count of units on hand to start the estimate.</p>
@@ -197,12 +238,22 @@ export function MedicationPage() {
       {meds.map((m) => {
         const st = dayDoseStatus(data.doses, m, today);
         const sched = medSchedule(m);
-        const { slots } = daySlots(data.doses, m, today);
+        const { slots, extra } = daySlots(data.doses, m, today);
+        const noneToday = slots.length === 0;
+        const asNeeded = medFrequency(m).kind === 'as_needed';
         return (
           <Card key={m.id} icon="pill" title={<>{m.name} <span className="font-normal text-slate-700">{m.dose}</span> {!m.active && <Badge>Inactive</Badge>}</>} actions={<Button variant="ghost" icon="pencil" onClick={() => setEdit(m)}>Edit</Button>}>
             <p className="text-slate-700">{describeSchedule(m)} · After-medication reminder: {m.postDoseReminderMinutes == null ? 'not set' : `${m.postDoseReminderMinutes} min after recorded dose (from your clinician’s instructions)`}</p>
             {m.instructions && <p className="mt-1 text-sm text-slate-700">Instructions: {m.instructions}</p>}
-            {m.active && sched.perDay === 1 && (
+            {m.active && noneToday && (
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <span className="font-medium">Today:</span>
+                <Badge tone={extra.some((x) => x.status === 'taken') ? 'ok' : 'neutral'}>{asNeeded ? (extra.length ? dayDoseSummary(data.doses, m, today) : 'None recorded') : 'No dose scheduled'}</Badge>
+                {extra.filter((x) => x.status === 'taken').map((x) => <span key={x.id} className="text-sm text-slate-600">{x.takenAt ? formatTime(x.takenAt, x.timeZone, tz) : 'time unknown'}</span>)}
+                <Button variant={asNeeded ? 'primary' : 'secondary'} onClick={() => setDoseFor({ med: m, status: 'taken', date: today })}>{asNeeded ? 'Record a dose' : 'Record a dose anyway'}</Button>
+              </div>
+            )}
+            {m.active && !noneToday && sched.perDay === 1 && (
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <span className="font-medium">Today:</span>
                 {st === 'not_recorded' ? <Badge>Not recorded</Badge> : st === 'taken' ? <Badge tone="ok">Taken</Badge> : <Badge tone="info" icon="skip">Skipped</Badge>}
@@ -210,7 +261,7 @@ export function MedicationPage() {
                 <Button onClick={() => setDoseFor({ med: m, status: 'skipped', date: today, doseIndex: 0 })}>Record skipped</Button>
               </div>
             )}
-            {m.active && sched.perDay > 1 && (
+            {m.active && !noneToday && sched.perDay > 1 && (
               <div className="mt-3">
                 <p className="font-medium">Today: <span className="font-normal text-slate-700">{dayDoseSummary(data.doses, m, today)}</span></p>
                 <ul className="mt-2 flex flex-col divide-y divide-slate-100 rounded-lg ring-1 ring-slate-200">
@@ -243,7 +294,7 @@ export function MedicationPage() {
                   return <td key={d} className="px-1 py-1"><DoseMark status={s} label={`${formatDateShort(d)}${sum ? ` (${sum})` : ''}`} /></td>;
                 })}</tr></tbody>
               </table>
-              <DoseLegend partial={sched.perDay > 1} />
+              <DoseLegend partial={sched.perDay > 1} notScheduled={medFrequency(m).kind !== 'daily' || !!m.endDate} />
             </div>
             <SupplyPanel med={m} />
             {m.history.length > 1 && (

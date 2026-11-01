@@ -6,7 +6,7 @@ import type { AppData, ISODate, SessionType } from '../types';
 import { Stat, DoseMark, DoseLegend } from './ui';
 import { SESSION_LABEL, SESSION_SHORT, SESSION_STYLE, fmt, fmtBP, sessionAverage, statsFor } from '../lib/bp';
 import { addDays, dateRange, formatDateShort, formatDateTiny, formatTime } from '../lib/time';
-import { dayDoseStatus, dayDoseSummary, describeSchedule, doseCounts, medSchedule } from '../lib/medication';
+import { dayDoseStatus, dayDoseSummary, describeSchedule, doseCounts, medFrequency, medSchedule } from '../lib/medication';
 import { describeChange, fmtWeight, movingAverage7 } from '../lib/weight';
 
 const TYPES: SessionType[] = ['morning_pre', 'morning_post', 'evening'];
@@ -81,18 +81,19 @@ export function DoctorDashboard({ data, from, to, showSymptoms }: { data: AppDat
             {meds.map((m) => {
               const st = weekDays.map((d) => ({ d, s: dayDoseStatus(data.doses, m, d), sum: dayDoseSummary(data.doses, m, d) }));
               const c = doseCounts(data.doses, m, weekDays);
-              const multi = medSchedule(m).perDay > 1;
+              const multi = medSchedule(m).perDay > 1 || medFrequency(m).kind !== 'daily';
+              const asNeeded = medFrequency(m).kind === 'as_needed';
               return (
                 <div key={m.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg bg-slate-50 p-3 ring-1 ring-slate-200/70">
                   <p className="min-w-40 font-semibold">{m.name} {m.dose}<span className="block text-xs font-normal text-slate-500">{describeSchedule(m)}</span></p>
                   <ul className="flex gap-1" aria-label={`${m.name}, last 7 days`}>
                     {st.map((x) => <li key={x.d} className="flex flex-col items-center text-[0.65rem] text-slate-500"><DoseMark status={x.s} label={`${formatDateShort(x.d)}${x.sum ? ` (${x.sum})` : ''}`} />{formatDateTiny(x.d)}</li>)}
                   </ul>
-                  <p className="text-sm text-slate-700">{multi ? `${c.taken} of ${c.expected} doses taken` : `Taken ${c.taken}`} · skipped {c.skipped} · not recorded {c.notRecorded}</p>
+                  <p className="text-sm text-slate-700">{asNeeded ? `Taken ${c.extraTaken} time${c.extraTaken === 1 ? '' : 's'} (only when needed)` : <>{multi ? `${c.taken} of ${c.expected} scheduled doses taken` : `Taken ${c.taken}`} · skipped {c.skipped} · not recorded {c.notRecorded}{c.extraTaken ? ` · ${c.extraTaken} extra` : ''}</>}</p>
                 </div>
               );
             })}
-            <DoseLegend partial={meds.some((m) => medSchedule(m).perDay > 1)} />
+            <DoseLegend partial={meds.some((m) => medSchedule(m).perDay > 1)} notScheduled={meds.some((m) => medFrequency(m).kind !== 'daily' || !!m.endDate)} />
           </div>
         </>
       )}

@@ -199,3 +199,27 @@ describe('medication taken several times a day', () => {
     expect(screen.getByRole('button', { name: 'Record taken: Dose 1 (8:00 am)' })).toBeInTheDocument();
   }, 20000);
 });
+
+describe('medicine taken only when needed', () => {
+  it('has no "not recorded" days and records doses whenever taken', async () => {
+    const user = userEvent.setup();
+    await renderApp('#/medication');
+    await screen.findByRole('heading', { level: 1, name: /Medication/ });
+    await user.click(screen.getByRole('button', { name: 'Add medication' }));
+    const dialog = await screen.findByRole('dialog');
+    await user.type(within(dialog).getByLabelText('Medication name'), 'Reliever');
+    await user.selectOptions(within(dialog).getByLabelText('How often?'), 'as_needed');
+    expect(within(dialog).queryByLabelText(/How many times/)).toBeNull();
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }));
+    expect(await screen.findByText(/^Only when needed ·/)).toBeInTheDocument();
+    expect(screen.getByText('None recorded')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Record a dose' }));
+    const form = await screen.findByRole('dialog');
+    expect(within(form).getByText(/Taken only when needed/)).toBeInTheDocument();
+    await user.click(within(form).getByRole('button', { name: 'Save dose record' }));
+    expect(await screen.findByText('taken 1 time')).toBeInTheDocument();
+    const saved = await loadAll('real');
+    expect(saved.medications[0].frequency).toEqual({ kind: 'as_needed' });
+    expect(saved.doses[0]).toMatchObject({ doseIndex: null, status: 'taken' });
+  }, 20000);
+});

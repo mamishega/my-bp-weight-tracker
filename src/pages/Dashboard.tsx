@@ -8,7 +8,7 @@ import { DoseForm } from '../components/DoseForm';
 import { sessionAverage, fmtBP, fmt, aboveContactThreshold } from '../lib/bp';
 import { formatDateLong, formatTime, todayIn, formatDuration } from '../lib/time';
 import { fmtWeight } from '../lib/weight';
-import { dayDoseStatus, dayDoseSummary, daySlots, doseLabel, doseTiming, estimateSupply } from '../lib/medication';
+import { dayDoseStatus, dayDoseSummary, daySlots, doseLabel, doseTiming, estimateSupply, medFrequency } from '../lib/medication';
 import type { Medication, SessionType, DoseStatus } from '../types';
 
 const SESSION_META: Record<SessionType, { icon: IconName; tone: 'blue' | 'orange' | 'green'; label: string }> = {
@@ -97,10 +97,24 @@ function MedRow({ med, today }: { med: Medication; today: string }) {
   const { data } = useStore();
   const [open, setOpen] = useState<DoseStatus | null>(null);
   const status = dayDoseStatus(data.doses, med, today);
-  const { slots } = daySlots(data.doses, med, today);
+  const { slots, extra } = daySlots(data.doses, med, today);
   const next = slots.find((s) => !s.record);
   const multi = slots.length > 1;
-  const taken = slots[0].record?.status === 'taken' ? slots[0].record : null;
+  const taken = slots[0]?.record?.status === 'taken' ? slots[0].record : null;
+  const asNeeded = medFrequency(med).kind === 'as_needed';
+  if (slots.length === 0) {
+    // Only when needed, or not a dose day.
+    return (
+      <li className="flex flex-col gap-2 py-3 first:pt-0 last:pb-0">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="font-semibold text-slate-900">{med.name} <span className="font-normal text-slate-500">{med.dose}</span></p>
+          <Badge tone={extra.some((d) => d.status === 'taken') ? 'ok' : 'neutral'}>{asNeeded ? (extra.length ? dayDoseSummary(data.doses, med, today) : 'Only when needed') : 'No dose today'}</Badge>
+        </div>
+        {asNeeded && <div><Button className="min-h-10 px-3 text-sm" icon="plus" onClick={() => setOpen('taken')}>Record a dose</Button></div>}
+        {open && <DoseForm med={med} date={today} initialStatus="taken" open onClose={() => setOpen(null)} />}
+      </li>
+    );
+  }
   return (
     <li className="flex flex-col gap-2 py-3 first:pt-0 last:pb-0">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -162,6 +176,7 @@ export function Dashboard() {
   const has = (t: SessionType) => data.sessions.some((s) => s.date === today && s.sessionType === t);
   const recordedCount = (['morning_pre', 'morning_post', 'evening'] as SessionType[]).filter(has).length;
   const medsDone = meds.length > 0 && meds.every((m) => daySlots(data.doses, m, today).slots.every((s) => s.record));
+  // (Medicines with nothing scheduled today count as done.)
   const supplyWarnings = meds.map((m) => ({ m, e: estimateSupply(m, data.doses, data.stock, today) })).filter((x) => x.e.belowThreshold || x.e.renewalSoon);
   const hour = Number(new Intl.DateTimeFormat('en-AU', { timeZone: tz, hour: 'numeric', hourCycle: 'h23' }).format(now));
   const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';

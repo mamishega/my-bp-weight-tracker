@@ -1,10 +1,10 @@
-import { medSchedule } from './medication';
 // Calendar (.ics) export of the reminder schedule. Calendar apps alert reliably
 // even when this web app is closed. Titles are deliberately generic (no
 // medication names, readings or other health details) because calendars are
 // often synced to cloud services.
 import type { AppData } from '../types';
 import { todayIn } from './time';
+import { medFrequency, medSchedule } from './medication';
 
 const DAYS = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'];
 
@@ -22,15 +22,37 @@ function fold(line: string): string {
   return out.join('\r\n');
 }
 
-export interface IcsEvent { uid: string; title: string; time: string; byDay?: number[]; description: string }
+export interface IcsEvent {
+  uid: string;
+  title: string;
+  time: string;
+  byDay?: number[];
+  /** Every N days starting on startDate (instead of daily). */
+  everyDays?: number;
+  startDate?: string;
+  /** Last day (inclusive). */
+  until?: string;
+  description: string;
+}
 
 export function reminderEvents(d: AppData): IcsEvent[] {
   const r = d.settings.reminders;
   const ev: IcsEvent[] = [];
   if (r.morningPre.enabled) ev.push({ uid: 'morning-pre', title: 'Morning blood pressure (before medication)', time: r.morningPre.time, description: 'Rest 5 minutes, then take two readings one minute apart. Record them in My BP & Weight.' });
   if (r.medication.enabled) {
-    const times = [...new Set(d.medications.filter((m) => m.active).flatMap((m) => medSchedule(m).times).filter((t): t is string => !!t))].sort();
-    times.forEach((t, i) => ev.push({ uid: `medication-${i}`, title: 'Medication — record it', time: t, description: 'Record in My BP & Weight whether you took or skipped your medication.' }));
+    // One event per distinct (time, which days, end) — never per medicine name.
+    const seen = new Map<string, IcsEvent>();
+    for (const m of d.medications.filter((x) => x.active)) {
+      const f = medFrequency(m);
+      if (f.kind === 'as_needed') continue;
+      for (const t of medSchedule(m).times) {
+        if (!t) continue;
+        const pattern = f.kind === 'weekly' ? { byDay: f.days } : f.kind === 'interval' ? { everyDays: f.everyDays, startDate: f.startDate } : {};
+        const key = JSON.stringify([t, pattern, m.endDate ?? null]);
+        if (!seen.has(key)) seen.set(key, { uid: '', title: 'Medication — record it', time: t, ...pattern, ...(m.endDate ? { until: m.endDate } : {}), description: 'Record in My BP & Weight whether you took or skipped your medication.' });
+      }
+    }
+    [...seen.values()].sort((a, b) => a.time.localeCompare(b.time)).forEach((e, i) => ev.push({ ...e, uid: `medication-${i}` }));
   }
   if (r.evening.enabled) ev.push({ uid: 'evening', title: 'Evening blood pressure', time: r.evening.time, description: 'Rest 5 minutes, then take two readings one minute apart. Record them in My BP & Weight.' });
   if (r.weight.enabled && r.weight.weekdays.length) ev.push({ uid: 'weight', title: 'Weight (optional)', time: r.weight.time, byDay: r.weight.weekdays, description: 'If you’d like, weigh yourself under your usual conditions.' });
@@ -44,12 +66,13 @@ export function buildIcs(d: AppData, now = new Date()): string {
   const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//My BP & Weight Tracker//Reminders//EN', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', 'X-WR-CALNAME:Health reminders'];
   for (const e of reminderEvents(d)) {
     const hhmm = e.time.replace(':', '') + '00';
-    const rrule = e.byDay ? `RRULE:FREQ=WEEKLY;BYDAY=${e.byDay.map((n) => DAYS[n]).join(',')}` : 'RRULE:FREQ=DAILY';
+    const until = e.until ? `;UNTIL=${e.until.replace(/-/g, '')}T235959Z` : '';
+    const rrule = e.byDay ? `RRULE:FREQ=WEEKLY;BYDAY=${e.byDay.map((n) => DAYS[n]).join(',')}${until}` : e.everyDays ? `RRULE:FREQ=DAILY;INTERVAL=${e.everyDays}${until}` : `RRULE:FREQ=DAILY${until}`;
     lines.push(
       'BEGIN:VEVENT',
       `UID:${e.uid}@my-bp-weight-tracker`,
       `DTSTAMP:${stamp}`,
-      `DTSTART;TZID=${tz}:${start}T${hhmm}`,
+      `DTSTART;TZID=${tz}:${e.everyDays && e.startDate ? e.startDate.replace(/-/g, '') : start}T${hhmm}`,
       'DURATION:PT10M',
       rrule,
       `SUMMARY:${esc(e.title)}`,

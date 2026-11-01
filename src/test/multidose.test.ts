@@ -3,7 +3,7 @@ import { dayDoseStatus, dayDoseSummary, daySlots, describeSchedule, doseCounts, 
 import { dosesCsv } from '../lib/csv';
 import { findDuplicateDoses } from '../lib/quality';
 import { dueReminders } from '../lib/reminders';
-import { reminderEvents } from '../lib/ics';
+import { buildIcs, reminderEvents } from '../lib/ics';
 import { emptyData } from '../lib/defaults';
 import type { DoseRecord, Medication } from '../types';
 
@@ -47,7 +47,7 @@ describe('several doses a day', () => {
   const m = med();
   it('shows each dose as not recorded until the patient records it (never "missed")', () => {
     expect(dayDoseStatus([], m, '2026-11-02')).toBe('not_recorded');
-    expect(doseCounts([], m, ['2026-11-02'])).toEqual({ expected: 2, taken: 0, skipped: 0, notRecorded: 2 });
+    expect(doseCounts([], m, ['2026-11-02'])).toEqual({ expected: 2, taken: 0, skipped: 0, notRecorded: 2, extraTaken: 0 });
   });
 
   it('counts one of two doses as partly recorded, both as taken', () => {
@@ -151,7 +151,7 @@ describe('multi-dose bug fixes', () => {
     expect(twice.history.at(-1)?.effectiveDate).toBe('2026-11-05');
     const before = dose({ date: '2026-11-02', doseIndex: 0 });
     expect(dayDoseStatus([before], twice, '2026-11-02')).toBe('taken'); // was once a day then
-    expect(doseCounts([before], twice, ['2026-11-02'])).toEqual({ expected: 1, taken: 1, skipped: 0, notRecorded: 0 });
+    expect(doseCounts([before], twice, ['2026-11-02'])).toEqual({ expected: 1, taken: 1, skipped: 0, notRecorded: 0, extraTaken: 0 });
     const after = dose({ date: '2026-11-05', doseIndex: 0 });
     expect(dayDoseStatus([after], twice, '2026-11-05')).toBe('partial'); // twice a day from the change
   });
@@ -177,5 +177,79 @@ describe('multi-dose bug fixes', () => {
     const [head, row] = csv.split(/\r?\n/);
     expect(head.endsWith('dose_number,scheduled_time')).toBe(true);
     expect(row.endsWith(',2,20:00')).toBe(true);
+  });
+});
+
+describe('other schedules: certain weekdays, every few days, only when needed, course end', () => {
+  // 2 Nov 2026 is a Monday.
+  it('weekly: doses only on chosen weekdays; other days are "no dose scheduled"', () => {
+    const w = med({ timesPerDay: 1, doseTimes: ['08:00'], frequency: { kind: 'weekly', days: [1, 3, 5] } });
+    expect(dayDoseStatus([], w, '2026-11-02')).toBe('not_recorded'); // Monday
+    expect(dayDoseStatus([], w, '2026-11-03')).toBe('not_scheduled'); // Tuesday
+    expect(doseCounts([], w, ['2026-11-02', '2026-11-03', '2026-11-04'])).toMatchObject({ expected: 2, notRecorded: 2 });
+    expect(describeSchedule(w)).toBe('Mon, Wed, Fri · once, usually 8:00 am');
+  });
+
+  it('every N days from a start date', () => {
+    const e = med({ timesPerDay: 1, doseTimes: [null], frequency: { kind: 'interval', everyDays: 3, startDate: '2026-11-01' } });
+    expect(['2026-10-29', '2026-11-01', '2026-11-02', '2026-11-04'].map((d) => scheduleOn(e, d).doseDay)).toEqual([false, true, false, true]);
+    expect(describeSchedule(e)).toBe('Every 3 days · once');
+  });
+
+  it('only when needed: nothing is ever "not recorded", doses taken are counted', () => {
+    const p = med({ frequency: { kind: 'as_needed' } });
+    expect(dayDoseStatus([], p, '2026-11-02')).toBe('not_scheduled');
+    const taken = [dose({ doseIndex: null }), dose({ doseIndex: null, takenAt: '2026-11-02T03:00:00.000Z' })];
+    expect(dayDoseStatus(taken, p, '2026-11-02')).toBe('taken');
+    expect(dayDoseSummary(taken, p, '2026-11-02')).toBe('taken 2 times');
+    expect(doseCounts(taken, p, ['2026-11-02'])).toEqual({ expected: 0, taken: 0, skipped: 0, notRecorded: 0, extraTaken: 2 });
+    expect(findDuplicateDoses(taken).size).toBe(0); // two as-needed doses aren't duplicates
+    expect(describeSchedule(p)).toBe('Only when needed');
+  });
+
+  it('a course end date stops scheduled doses after it', () => {
+    const c = med({ timesPerDay: 1, doseTimes: ['08:00'], endDate: '2026-11-02' });
+    expect(dayDoseStatus([], c, '2026-11-02')).toBe('not_recorded');
+    expect(dayDoseStatus([], c, '2026-11-03')).toBe('not_scheduled');
+    expect(describeSchedule(c)).toMatch(/^until 2 Nov 2026 · /);
+  });
+
+  it('reminders only on dose days; none for as-needed', () => {
+    const base = emptyData();
+    const d = { ...base, settings: { ...base.settings, timeZone: 'Australia/Sydney', reminders: { ...base.settings.reminders, medication: { enabled: true } } },
+      medications: [med({ id: 'w', timesPerDay: 1, doseTimes: ['08:00'], frequency: { kind: 'weekly', days: [2] } }), med({ id: 'p', frequency: { kind: 'as_needed' } })] };
+    // Monday 2 Nov, 9 pm Sydney: the Tuesday-only medicine isn't due, as-needed never is.
+    expect(dueReminders(d, new Date('2026-11-02T10:00:00.000Z')).filter((r) => r.kind === 'medication')).toEqual([]);
+    expect(dueReminders(d, new Date('2026-11-03T10:00:00.000Z')).filter((r) => r.kind === 'medication')).toHaveLength(1);
+  });
+
+  it('calendar export follows the days, the interval and the course end', () => {
+    const base = emptyData();
+    const d = { ...base, settings: { ...base.settings, reminders: { ...base.settings.reminders, medication: { enabled: true } } },
+      medications: [
+        med({ id: 'w', timesPerDay: 1, doseTimes: ['08:00'], frequency: { kind: 'weekly', days: [1, 4] } }),
+        med({ id: 'i', timesPerDay: 1, doseTimes: ['09:00'], frequency: { kind: 'interval', everyDays: 2, startDate: '2026-11-01' }, endDate: '2026-12-01' }),
+        med({ id: 'p', frequency: { kind: 'as_needed' }, doseTimes: ['10:00'] }),
+      ] };
+    const ev = reminderEvents(d).filter((e) => e.uid.startsWith('medication'));
+    expect(ev.map((e) => [e.time, e.byDay ?? null, e.everyDays ?? null, e.until ?? null])).toEqual([['08:00', [1, 4], null, null], ['09:00', null, 2, '2026-12-01']]);
+    const ics = buildIcs(d, new Date('2026-11-01T00:00:00Z'));
+    expect(ics).toContain('RRULE:FREQ=WEEKLY;BYDAY=MO,TH');
+    expect(ics).toContain('RRULE:FREQ=DAILY;INTERVAL=2;UNTIL=20261201T235959Z');
+    expect(ics).toMatch(/DTSTART;TZID=[^:]+:20261101T090000/);
+  });
+
+  it('supply estimate spreads units over the dose days', () => {
+    const w = med({ frequency: { kind: 'weekly', days: [1] }, supply: { enabled: true, unitsPerDay: 7, refillThresholdUnits: null, renewalDate: null } });
+    const stock = [{ id: 's', medicationId: 'm2', at: '2026-10-31T00:00:00.000Z', kind: 'count' as const, units: 14, note: '', createdAt: t0 }];
+    expect(estimateSupply(w, [], stock, '2026-11-02').daysLeft).toBe(14); // 7 units a week = 1 a day
+    expect(estimateSupply(med({ frequency: { kind: 'as_needed' }, supply: w.supply }), [], stock, '2026-11-02').daysLeft).toBeNull();
+  });
+
+  it('damaged frequency data means every day', () => {
+    expect(medSchedule(med()).perDay).toBe(2);
+    expect(scheduleOn(med({ frequency: { kind: 'weekly', days: [] } as never }), '2026-11-03').doseDay).toBe(true);
+    expect(scheduleOn(med({ frequency: { kind: 'interval', everyDays: 0, startDate: 'x' } as never }), '2026-11-03').doseDay).toBe(true);
+    expect(scheduleOn(med({ frequency: 'weekly' as never }), '2026-11-03').doseDay).toBe(true);
   });
 });

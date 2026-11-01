@@ -7,7 +7,7 @@ import { StatsTable } from './Trends';
 import { SESSION_LABEL, CONDITION_LABEL, fmt, fmtBP, prePostComparison, sessionAverage } from '../lib/bp';
 import { addDays, dateRange, formatClock, formatDateLong, formatDateShort, formatDuration, formatOffset, formatTime, isValidDate, localDateOf, todayIn } from '../lib/time';
 import { QUALITY_LABEL, findDuplicateSessions, sessionFlags } from '../lib/quality';
-import { describeSchedule, doseCounts, doseTiming, medSchedule } from '../lib/medication';
+import { describeSchedule, doseCounts, doseTiming, medFrequency, medSchedule } from '../lib/medication';
 import { fmtWeight, movingAverage7, describeChange } from '../lib/weight';
 import { lifestyleSummary } from './SymptomsLifestyle';
 import { SAFETY_STATEMENT } from '../lib/guidance';
@@ -85,8 +85,9 @@ export function ReportBody({ data, from, to, today, opt, patientName, preparedNo
           {m.history.length > 1 && <ul className="text-sm">{m.history.map((v, i) => <li key={i}>From {formatDateShort(localDateOf(v.effectiveFrom, tz))}: {v.name} {v.dose}, {describeSchedule(v).toLowerCase()}</li>)}</ul>}
           {(() => {
             const c = doseCounts(data.doses, m, days);
-            return medSchedule(m).perDay > 1
-              ? <p className="text-sm">In this period: {c.taken} of {c.expected} scheduled doses recorded as taken, {c.skipped} skipped, {c.notRecorded} not recorded.</p>
+            if (medFrequency(m).kind === 'as_needed') return <p className="text-sm">In this period: taken {c.extraTaken} time{c.extraTaken === 1 ? '' : 's'} (only when needed).</p>;
+            return medSchedule(m).perDay > 1 || medFrequency(m).kind !== 'daily'
+              ? <p className="text-sm">In this period: {c.taken} of {c.expected} scheduled doses recorded as taken, {c.skipped} skipped, {c.notRecorded} not recorded{c.extraTaken ? `, ${c.extraTaken} taken outside the schedule` : ''}.</p>
               : <p className="text-sm">In this period: {c.taken} days recorded as taken, {c.skipped} skipped, {c.notRecorded} not recorded.</p>;
           })()}
         </div>

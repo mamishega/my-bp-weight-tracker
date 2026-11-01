@@ -5,7 +5,7 @@ import { useDirtyForm } from '../store/dirty';
 import { Button, Checkbox, Modal, RadioGroup, TextArea, TextField, useToast, Notice } from './ui';
 import { formatClock, instantToZoned, isValidDate, isValidTime, nowTimeIn, todayIn, zonedToInstant } from '../lib/time';
 import { uid } from '../lib/defaults';
-import { daySlots, doseLabel, medSchedule, nextOpenSlot, scheduleOn, versionAt } from '../lib/medication';
+import { daySlots, doseLabel, medFrequency, medSchedule, nextOpenSlot, scheduleOn, versionAt } from '../lib/medication';
 
 interface Props {
   med: Medication;
@@ -44,8 +44,9 @@ export function DoseForm({ med, existing, initialStatus, date, doseIndex, open, 
   // The schedule that applied on the chosen day (it may have changed since).
   const sched = scheduleOn(med, day);
   const label = (i: number) => (sched.perDay === 1 ? doseLabel(med, 0) : `Dose ${i + 1}${sched.times[i] ? ` (${formatClock(sched.times[i]!)})` : ''}`);
+  const unscheduled = !sched.doseDay;
   // Another record for the same dose on the same day (several doses a day are normal).
-  const duplicates = daySlots(data.doses.filter((d) => d.id !== existing?.id), med, day).slots.filter((x) => x.index === slot && x.record).map((x) => x.record!);
+  const duplicates = unscheduled ? [] : daySlots(data.doses.filter((d) => d.id !== existing?.id), med, day).slots.filter((x) => x.index === slot && x.record).map((x) => x.record!);
 
   const save = async () => {
     const e: Record<string, string> = {};
@@ -67,8 +68,9 @@ export function DoseForm({ med, existing, initialStatus, date, doseIndex, open, 
       timeZone: tz,
       utcOffsetMinutes: z?.offsetMinutes ?? null,
       units: status === 'taken' ? u : null,
-      doseIndex: Math.min(slot, sched.perDay - 1),
-      scheduledTime: sched.times[Math.min(slot, sched.perDay - 1)] ?? null,
+      // No scheduled dose that day (only when needed, or not a dose day): not tied to a dose number.
+      doseIndex: unscheduled ? null : Math.min(slot, sched.perDay - 1),
+      scheduledTime: unscheduled ? null : sched.times[Math.min(slot, sched.perDay - 1)] ?? null,
       nameSnapshot: existing?.nameSnapshot ?? v.name,
       doseSnapshot: existing?.doseSnapshot ?? v.dose,
       notes,
@@ -77,7 +79,7 @@ export function DoseForm({ med, existing, initialStatus, date, doseIndex, open, 
     };
     await put('doses', rec);
     setDirty(false);
-    const which = sched.perDay > 1 ? ` (${label(slot).toLowerCase()})` : '';
+    const which = !unscheduled && sched.perDay > 1 ? ` (${label(slot).toLowerCase()})` : '';
     toast(status === 'taken' ? `${med.name}${which} recorded as taken${rec.takenAt ? '' : ' (time unknown)'}.` : `${med.name}${which} recorded as skipped.`);
     onClose();
   };
@@ -85,7 +87,8 @@ export function DoseForm({ med, existing, initialStatus, date, doseIndex, open, 
   return (
     <Modal open={open} onClose={onClose} title={`${existing ? 'Edit' : 'Record'} dose: ${med.name} ${med.dose}`} footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" onClick={save}>Save dose record</Button></>}>
       <div className="flex flex-col gap-4">
- {sched.perDay > 1 && (
+ {unscheduled && <Notice tone="info">{medFrequency(med).kind === 'as_needed' ? 'Taken only when needed: each dose is recorded on its own.' : 'No dose is scheduled on this day. The record is kept as an extra dose.'}</Notice>}
+        {!unscheduled && sched.perDay > 1 && (
           <RadioGroup
             name={`slot-${med.id}`}
             legend={`Which dose? (${sched.perDay} a day)`}

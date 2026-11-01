@@ -70,7 +70,8 @@ export function findDuplicateDoses(doses: DoseRecord[]): Set<string> {
   const groups = new Map<string, DoseRecord[]>();
   for (const d of doses) {
     // Several doses a day are normal: only the same dose number twice is a possible duplicate.
-    const k = `${d.medicationId}|${d.date}|${d.doseIndex ?? 0}`;
+    // Unscheduled doses (only when needed) may repeat; only an identical time is suspicious.
+    const k = `${d.medicationId}|${d.date}|${d.doseIndex === null ? `extra:${d.takenAt ?? d.id}` : d.doseIndex ?? 0}`;
     groups.set(k, [...(groups.get(k) ?? []), d]);
   }
   for (const list of groups.values()) if (list.length > 1) list.forEach((d) => out.add(d.id));

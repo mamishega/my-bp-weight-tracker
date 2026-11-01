@@ -77,8 +77,17 @@ export interface MedicationVersion {
   /** Scheduled doses per day and their times (older versions: once a day at usualTime). */
   timesPerDay?: number;
   doseTimes?: (string | null)[];
+  frequency?: MedFrequency;
+  endDate?: ISODate | null;
   instructions: string;
 }
+
+/** Which days a medicine is taken. Missing = every day. */
+export type MedFrequency =
+  | { kind: 'daily' }
+  | { kind: 'weekly'; days: number[] } // 0 = Sunday
+  | { kind: 'interval'; everyDays: number; startDate: ISODate }
+  | { kind: 'as_needed' };
 
 export interface Medication {
   id: ID;
@@ -90,6 +99,10 @@ export interface Medication {
   timesPerDay?: number;
   /** Usual time of each dose (HH:mm), one per dose; null = no set time. */
   doseTimes?: (string | null)[];
+  /** Which days it is taken (every day, some weekdays, every N days, only when needed). */
+  frequency?: MedFrequency;
+  /** Last day of a course (optional). After it, no doses are scheduled. */
+  endDate?: ISODate | null;
   instructions: string;
   active: boolean;
   /** Minutes after the recorded dose time to remind for an after-medication

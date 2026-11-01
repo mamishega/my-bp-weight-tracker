@@ -6,7 +6,7 @@ import { DoseMark, DoseLegend, Badge, Button, Card, Checkbox, Empty, Notice, Pag
 import { BPChart, WeightChart } from '../components/Charts';
 import { SESSION_LABEL, SESSION_STYLE, fmt, fmtBP, prePostComparison, sessionAverage, statsFor } from '../lib/bp';
 import { addDays, dateRange, daysBetween, formatDateShort, formatTime, isValidDate, todayIn, weekStart } from '../lib/time';
-import { dayDoseStatus, dayDoseSummary, doseCounts, medSchedule } from '../lib/medication';
+import { dayDoseStatus, dayDoseSummary, doseCounts, medFrequency, medSchedule } from '../lib/medication';
 import { describeChange, fmtWeight, movingAverage7 } from '../lib/weight';
 import { lifestyleSummary } from './SymptomsLifestyle';
 import { uid } from '../lib/defaults';
@@ -92,7 +92,7 @@ function MedHistoryGrid({ data, from, to }: { data: AppData; from: ISODate; to: 
           ))}
         </tbody>
       </table>
-      <DoseLegend partial={meds.some((m) => medSchedule(m).perDay > 1)} />
+      <DoseLegend partial={meds.some((m) => medSchedule(m).perDay > 1)} notScheduled={meds.some((m) => medFrequency(m).kind !== 'daily' || !!m.endDate)} />
     </div>
   );
 }
@@ -149,8 +149,9 @@ function WeeklyReview() {
       <ul className="text-sm">
         {data.medications.filter((m) => m.active || data.doses.some((d) => d.medicationId === m.id && d.date >= ws && d.date <= we)).map((m) => {
           const c = doseCounts(data.doses, m, pastDays);
-          const unit = medSchedule(m).perDay > 1 ? `of ${c.expected} doses ` : '';
-          return <li key={m.id}><span className="font-medium">{m.name}:</span> {c.taken} {unit}recorded as taken · {c.skipped} skipped · {c.notRecorded} not recorded</li>;
+          if (medFrequency(m).kind === 'as_needed') return <li key={m.id}><span className="font-medium">{m.name} (only when needed):</span> taken {c.extraTaken} time{c.extraTaken === 1 ? '' : 's'}</li>;
+          const unit = medSchedule(m).perDay > 1 || medFrequency(m).kind !== 'daily' ? `of ${c.expected} scheduled doses ` : '';
+          return <li key={m.id}><span className="font-medium">{m.name}:</span> {c.taken} {unit}recorded as taken · {c.skipped} skipped · {c.notRecorded} not recorded{c.extraTaken ? ` · ${c.extraTaken} extra` : ''}</li>;
         })}
         {data.medications.length === 0 && <li>No medications added.</li>}
       </ul>
