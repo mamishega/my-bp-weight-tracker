@@ -70,6 +70,10 @@ function ReadingForm({ existing, initialType }: { existing?: BPSession; initialT
   useDirtyForm('reading', dirty);
 
   const touch = () => setDirty(true);
+  // "Same as last time": the arm and monitor of the most recent session (conditions are never copied: they change each time).
+  const last = existing ? null : [...data.sessions].sort((a, b) => b.measuredAt.localeCompare(a.measuredAt))[0];
+  const lastMonitorOk = !!last?.monitorId && settings.monitors.some((m) => m.id === last.monitorId);
+  const canCopyLast = !!last && (!!last.arm || lastMonitorOk) && ((last.arm ?? '') !== arm || (lastMonitorOk ? last.monitorId : monitorId) !== monitorId);
   const setReading = (i: number, k: keyof ReadingInput, v: string) => {
     touch();
     setR((rs) => rs.map((x, j) => (j === i ? { ...x, [k]: v } : x)));
@@ -250,7 +254,13 @@ function ReadingForm({ existing, initialType }: { existing?: BPSession; initialT
           </Card>
         )}
 
-        <Optional summary="Arm and monitor" defaultOpen={!settings.defaultArm && settings.monitors.length > 0}>
+        {canCopyLast && last && (
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <Button icon="refresh" className="min-h-10 text-sm" onClick={() => { touch(); if (last.arm) setArm(last.arm); if (lastMonitorOk) setMonitorId(last.monitorId!); }}>Same arm and monitor as last time</Button>
+            <span className="text-slate-600">{[last.arm && `${last.arm === 'left' ? 'Left' : 'Right'} arm`, lastMonitorOk && settings.monitors.find((m) => m.id === last.monitorId)?.label].filter(Boolean).join(' · ')}</span>
+          </div>
+        )}
+        <Optional summary={`Arm and monitor${arm || monitorId ? `: ${[arm && (arm === 'left' ? 'left' : 'right'), monitorId && settings.monitors.find((m) => m.id === monitorId)?.label].filter(Boolean).join(', ')}` : ''}`} defaultOpen={!settings.defaultArm && settings.monitors.length > 0}>
           <SelectField label="Arm used" value={arm} onChange={(e) => { touch(); setArm(e.target.value as Arm | ''); }}>
             <option value="">Not recorded</option>
             <option value="left">Left</option>

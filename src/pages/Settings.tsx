@@ -8,6 +8,7 @@ import { applyMerge, applyReplace, planImport, validateBackup, type BackupFile, 
 import { readFileText, saveFile } from '../lib/files';
 import { buildIcs, reminderEvents } from '../lib/ics';
 import { Icon } from '../components/Icon';
+import { ImportReadingsCard } from '../components/ImportReadings';
 import { emptyData, uid } from '../lib/defaults';
 import { deleteShare } from '../lib/share';
 import { medSchedule } from '../lib/medication';
@@ -425,6 +426,7 @@ export function SettingsPage() {
         <Notice tone="warn">Backup files contain sensitive personal health information and are not encrypted. Keep them somewhere private.</Notice>
       </Card>
       <RestoreCard />
+      <ImportReadingsCard />
       <PasscodeCard />
       <GeneralCard />
       <TargetsCardKeyed />
