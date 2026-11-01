@@ -6,6 +6,7 @@ import type { ISODate, SessionType } from '../types';
 import { Button, Notice } from '../components/ui';
 import { Logo } from '../components/Icon';
 import { BPChart, WeightChart } from '../components/Charts';
+import { DoctorDashboard } from '../components/DoctorDashboard';
 import { ReportBody } from './Report';
 import { ShareDecryptError, ShareHttpError, fetchShared, relativeTime, resolveShareId, shareApiBase, type ParsedShareLink, type ShareSnapshot } from '../lib/share';
 import { addDays } from '../lib/time';
@@ -131,11 +132,14 @@ function Ready({ state, days, setDays, now, onRefresh }: { state: Extract<State,
           patientName={snap.options.displayName}
           preparedNote={<>Live shared link, last updated {updated.toLocaleString('en-AU', { dateStyle: 'medium', timeStyle: 'short' })}</>}
           charts={
+            <>
+            <DoctorDashboard data={d} from={from} to={to} showSymptoms={opt('symptoms')} />
             <section aria-label="Charts" className="mt-6 flex flex-col gap-6 break-inside-avoid">
               <BPChart sessions={d.sessions.filter((s) => s.date >= from && s.date <= to)} measure="systolic" from={from} to={to} target={d.settings.targets.systolic} visible={ALL} targetLabel="Patient’s target" />
               <BPChart sessions={d.sessions.filter((s) => s.date >= from && s.date <= to)} measure="diastolic" from={from} to={to} target={d.settings.targets.diastolic} visible={ALL} targetLabel="Patient’s target" />
               <WeightChart weights={d.weights} from={from} to={to} unit={d.settings.weightUnit} goalKg={d.settings.weightGoal.goalKg} />
             </section>
+            </>
           }
         />
       </article>

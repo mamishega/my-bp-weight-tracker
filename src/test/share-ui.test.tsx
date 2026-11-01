@@ -83,6 +83,11 @@ describe('doctor share link (doctor side)', () => {
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(/blood pressure & weight summary/i);
     expect(screen.getByText(/Sam Citizen/)).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Original readings' })).toBeInTheDocument();
+    // Dashboard overview at the top.
+    expect(screen.getByRole('heading', { name: 'At a glance' })).toBeInTheDocument();
+    expect(screen.getByText('Latest reading')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Average by session type' })).toBeInTheDocument();
+    expect(screen.getByRole('table', { name: 'Five most recent blood pressure sessions' })).toBeInTheDocument();
     expect(screen.getByText(/not monitored/i)).toBeInTheDocument();
     // No editing controls on the doctor's view.
     expect(screen.queryByRole('textbox')).toBeNull();
