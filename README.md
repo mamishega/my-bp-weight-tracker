@@ -43,12 +43,13 @@ On some platforms (notably iOS) the installed app and the browser keep **separat
 |---|---|
 | Dashboard | Today's date. Cards for morning before-med, morning after-med, evening and weight (large numbers, completion badges, quick entry). A medication card showing **Not recorded / Taken / Skipped**, today's habits, supply warnings, last backup and **Back up now**. |
 | Add Reading | Session type (always your choice, never auto-relabelled by clock time), date and actual time, two readings one minute apart or a clearly labelled single reading, live session average, optional 5-min rest and 1-min interval timers. Arm/monitor with saved defaults, measurement-condition flags, symptoms and notes (collapsed), dose linking with actual elapsed time, unusual-value confirmation, duplicate warning, and a "session day" for readings after midnight. |
-| Medication & Supply | Multiple medicines, each taken **1–6 times a day** with an optional usual time per dose. Each dose is recorded separately (*Dose 2 (8:00 pm)*), today's doses are listed with their own buttons, and days show *1 of 2 taken*. Also dose/instructions, prescription history kept on every change, taken/skipped records with actual time (or *Medication time unknown*), 14-day record grid, after-medication reminder interval (you enter it from your clinician; never suggested). Estimated supply with manual counts and refills. |
+| Medication & Supply | Multiple medicines taken **every day, on certain weekdays, every few days, or only when needed**, with an optional course end date, and **1–6 times** on each dose day with an optional usual time per dose. Each dose is recorded separately (*Dose 2 (8:00 pm)*), today's doses are listed with their own buttons, and days show *1 of 2 taken*. Also dose/instructions, prescription history kept on every change, taken/skipped records with actual time (or *Medication time unknown*), 14-day record grid, after-medication reminder interval (you enter it from your clinician; never suggested). Estimated supply with manual counts and refills. |
 | Weight | kg or lb (original entry preserved), start, current, goal, optional target date, change since start, remaining to goal, 7-day moving average with contributing-day counts, milestones, history, chart. |
 | Symptoms & Lifestyle | Urgent guidance shown **above** the form. Symptoms diary (severity, duration, related reading/dose, actions taken). Optional daily context (sleep, stress, activity, caffeine, alcohol, salty meals, illness, tags). Habit goals that celebrate completed actions. |
 | Trends & Weekly Review | 7/30/90-day and custom ranges. Systolic, diastolic and weight charts on a shared date axis, with colours, symbols and labels per session type. Separate summary statistics per session type with sample counts. Before/after **observed differences**, medication recording history, lifestyle context, table alternative. Weekly review. |
 | History & Reports | Editable history filtered by date, record type and session type, plus a data-quality filter. CSV exports. Report builder with optional-content checkboxes → printable preview → *Print / Save as PDF*. |
 | Appointments | Upcoming/past appointments, questions for your doctor (mark as discussed), *Prepare report*. |
+| Measurement week | Guided 7-day routine from the healthdirect guidance: two readings, morning (before medication) and evening, for 7 days (at least 5). Day-by-day progress on the dashboard, a printable one-page summary (per-session-type averages, completeness, every original reading) and a section in the doctor's view. Facts only, no interpretation. |
 | Share with my doctor | One private, read-only **live link** for your doctor. It always shows your latest records: choose the time window (last 30–365 days), optional content and a name to show. Copy or share the link, preview it, see when it last updated, and turn it off or replace it. |
 | Settings & Backups | JSON backup, validated restore with preview and merge/replace, time zone, units, personal targets from your clinician, monitors/cuffs, reminders and notifications, privacy and storage, demo mode, delete all data, install instructions. |
 
@@ -86,6 +87,14 @@ None of the Australian consumer sources above gives a blood pressure number that
 - **Several doses a day:** each dose record notes which scheduled dose it was. A day is *taken* when every dose is recorded as taken, *skipped* when every dose is recorded as skipped, and otherwise *some doses recorded*. Unrecorded doses are always *not recorded*. Older records without a dose number fill the day's doses in time order, and older medicines count as once a day. Reminders come once per unrecorded dose at its usual time. After-medication reading reminders follow only the first dose of the day, because the after-medication session is a morning reading. Supply counts every dose recorded as taken, and new doses default to units-per-day ÷ doses-per-day.
 - **Duplicates** are flagged (same session type, same first reading within 15 min, or identical time; for medicines, the same dose recorded twice on a day) and never removed.
 
+## Cloud backup and sync (optional)
+
+*Settings → Cloud backup and sync* keeps an encrypted copy of every record online and keeps your devices in step.
+
+- **Recovery key.** A 32-character recovery key (160 random bits, Crockford base32, shown once for you to save) is the only way in. HKDF-SHA-256 derives the relay record id, a proof for reading and writing, and the AES-256-GCM key from it. The payload is gzip-compressed, then encrypted with the id as associated data. The relay stores only ciphertext plus a SHA-256 hash of the proof. The key itself lives in your settings, so the passcode lock encrypts it, and it's never part of the uploaded copy.
+- **Sync.** About 4 seconds after a change, on opening, when back online, and every 2 minutes while visible, the device downloads the cloud copy and merges it. Per record the newest `updatedAt` wins. Deletions are kept as tombstones (collection, id and time only; 400 days), so a deleted record stays deleted unless it was edited later. Newer settings win, except this device's sync choice and notification permission. Uploads carry a version number: the relay rejects a stale one (409), so the device merges again and retries, and two devices can't overwrite each other.
+- **Another device:** *I have a recovery key* finds the backup and offers **Combine** (union, recommended; the cloud copy's settings are used) or **Replace**. *Turn off on this device* keeps both copies. *Delete cloud backup* removes the online copy. A cloud copy unused for 400 days expires.
+
 ## Storage, privacy and backups
 
 - IndexedDB, in this browser only. No sync between devices. Clearing site data deletes records. The app can ask the browser for persistent storage, which is not a guarantee.
@@ -99,7 +108,14 @@ None of the Australian consumer sources above gives a blood pressure number that
 
 The build generates `sw.js`, which precaches the full app shell on first load. After that the app opens, records, edits and reviews offline (records are in IndexedDB, not the network). An offline banner is shown. App updates are never applied automatically: a banner offers **Update now**, and if a form has unsaved changes you're warned first. Forms also warn before the page is closed with unsaved changes.
 
-## Reminders: what needs extra infrastructure
+## Reminders when the app is closed (optional)
+
+*Settings → Reminders → Remind me when the app is closed* uses Web Push. It covers the same reminders as the calendar export: morning, each dose time (following the medicine's days, interval and end date), evening, and weight days.
+
+- The relay stores only the device's push address, its time zone and the reminder times, kept in KV metadata. A cron job runs every 5 minutes and sends an **empty** push (VAPID ES256-signed) at each due time. The service worker then shows the matching generic reminder from a small list kept on the device. No medicine names or readings go to the relay or the push service.
+- iPhone and iPad: works only in the app added to the Home Screen. *Send a test reminder* checks the whole path. Dead subscriptions (404/410) are removed automatically.
+
+## Reminders that depend on your records
 
 In-app reminders (morning before-med, medication, after-medication timed from the **actual recorded dose time** + your clinician's interval, evening, optional weight days, refills/renewal, backups, appointments) appear while the app is open. Snooze and dismiss never mark anything as done. Browser notifications are requested **only** when you turn them on, and fire only while the app is open or running in a tab.
 
@@ -114,6 +130,8 @@ A shared link that **updates when you add records** can't work from a local-only
 - **Updates itself.** About 3 seconds after any change (at most once every 15 s), and when you come back online, the app re-encrypts and replaces the stored copy. Unchanged data isn't re-uploaded. The doctor's page checks for new data every minute and shows *Last updated by the patient …*. If you haven't opened the app for more than 3 days, it says newer readings may be missing.
 - **What's shared:** readings, medication records, weight (plus 6 earlier days so the 7-day average is right), personal targets and next appointment date/clinician. Notes, symptoms diary, lifestyle notes, questions and quality notes are only included if you tick them. The link never contains reminders, habits, supply counts, monitors, appointment notes or location, backup info, or the link's own secrets.
 - **Control:** links expire after 30–365 days (the expiry is never extended by updates). *Turn off sharing* deletes the stored copy immediately. *Replace with a new link* does the same and creates a fresh one. *Delete all data* also turns the link off. Erasing after a forgotten passcode can't turn it off, because the link's secret is locked too. It stops updating and expires on its own. Sharing is unavailable in demo mode and pauses while the passcode lock is closed. The link's secrets live in your settings, so they are encrypted by the passcode lock and included in backups. Restoring a backup keeps the link that's active on this device.
+- **Optional PIN.** A 4–8 digit PIN you tell your doctor separately. The key is derived with the PIN as well, and the relay releases the encrypted data only for a matching proof (stored as a SHA-256 hash). 10 wrong tries lock the link for an hour, and the counter is stored apart from the data.
+- **Last opened.** The Share page shows when the link was last opened and how many visits it has had (time only, at most one visit counted per 15 minutes, stored apart from the data). Your own *Preview* isn't counted.
 - **The doctor's view** (`#/shared/<id>?k=<key>`) is read-only and starts only the viewer. It never opens or creates app storage in the doctor's browser. It opens with an **At a glance** dashboard: latest reading, days with a reading, latest weight and 7-day average, the patient's target with how many sessions averaged above it, averages per session type (period and last 7 days, never combined), a 7-day medication record grid and the 5 most recent sessions. Below that are charts and the same content as the printable report, lets the doctor switch between 7/14/30/90 days, and prints to PDF. It states clearly that the records aren't monitored.
 - **Not monitoring:** nobody is alerted to new readings. The urgent-symptom guidance is unchanged.
 
@@ -143,18 +161,21 @@ For local testing, `npm run share:dev`, then `VITE_SHARE_API_URL=http://localhos
 
 Without `VITE_SHARE_API_URL` the app behaves exactly as before: it makes no outside connections, and the share page explains that sharing isn't set up.
 
-Limitations: the free KV tier allows 1,000 writes a day, which is far more than one patient's updates need. KV is eventually consistent, so a doctor in another region may see an update up to about a minute later. The relay has no per-IP rate limiting. Add a Cloudflare rate-limiting rule if the worker URL is ever abused.
+The relay also enforces a Workers rate limit of 120 requests a minute per IP address (`RATE_LIMITER` binding in `wrangler.toml`). Push needs its private key as a Worker secret: `npx wrangler@4 secret put VAPID_PRIVATE_KEY --config share-worker/wrangler.toml`. The public key is in `wrangler.toml` and `.env.production`.
+
+Limitations: the free KV tier allows 1,000 writes a day. That is far more than one patient's link, sync and view updates need, but not enough for many users. KV is eventually consistent, so another region may see an update up to about a minute later.
 
 ## Appearance and accessibility
 
 - Light, dark, or match-device appearance (*Settings → General*). The dark theme is generated by mirroring the Tailwind palette (`scripts/gen-dark-theme.mjs`) and uses dark-tuned chart colours. Printing always uses the light theme.
 - Unsaved-changes guard: leaving a page with a half-filled form asks before discarding it.
 - `npm test` runs axe-core on every page with sample data. `npm run check:a11y` runs axe-core, including colour contrast, in real Chrome in light and dark mode at desktop and phone widths. Both run in the GitHub Actions workflow, and a violation stops the deploy.
+- **Faster entry:** *Same arm and monitor as last time* (conditions are never copied, because they change each time), Home Screen shortcuts (Add reading, Medication, Weight), and **CSV import** (*Settings → Import readings*). The import guesses the columns, handles AU, US and ISO dates and 12/24-hour times, pairs readings taken within 10 minutes, skips readings already in the app, lists unreadable rows, and sets session types by a rule you choose. Values are imported unchanged.
 - Secondary pages and the chart library are loaded on demand (main bundle 364 KB, 114 KB gzipped). The service worker still precaches every chunk, so offline use is unchanged.
 
 ## Testing
 
-`npm test` runs 209 tests (all passing). Main areas:
+`npm test` runs 278 tests (all passing). Main areas:
 
 | Area | File |
 |---|---|
@@ -166,11 +187,13 @@ Limitations: the free KV tier allows 1,000 writes a day, which is far more than 
 | Accessible navigation, labelled form fields, error messages and focus, unusual-value confirmation, urgent guidance before the form, unsaved-changes guard, number inputs, lock screen | `src/test/ui.test.tsx` |
 | Passcode lock: nothing readable at rest, wrong passcode rejected, decrypt on disable, erase | `src/test/crypto.test.ts` |
 | Calendar export: time zone, repeat rules, alarms, no health details | `src/test/ics.test.ts` |
-| Several doses a day: schedule defaults for older data, labels, history, per-dose status (partial/taken/skipped), older untagged records, duplicates, supply, per-dose reminders, after-medication reminders only for the first dose, calendar times, and adding a twice-a-day medicine and recording dose 2 in the UI | `src/test/multidose.test.ts`, `src/test/ui.test.tsx` |
+| Cloud sync: recovery key, derivation, encryption and compression, merge rules, tombstones, joining, two devices through the relay incl. simultaneous saves | `src/test/vault.test.ts` |
+| Measurement week, CSV import, push schedule | `src/test/week.test.ts`, `src/test/import.test.ts`, `src/test/push.test.ts` |
+| Several doses a day and other schedules (weekdays, interval, as needed, course end): schedule defaults for older data, labels, history, per-dose status (partial/taken/skipped), older untagged records, duplicates, supply, per-dose reminders, after-medication reminders only for the first dose, calendar times, and adding a twice-a-day medicine and recording dose 2 in the UI | `src/test/multidose.test.ts`, `src/test/ui.test.tsx` |
 | axe-core on every page (plus a check that axe really detects violations) | `src/test/a11y.test.tsx`, `src/test/axe-sanity.test.tsx` |
 | Guidance review date and source links | `src/test/guidance.test.ts` |
 | Doctor share link: encryption and id binding, short named links (secret only in `#`, HKDF key, hashed id, older links still parse), name labels incl. non-Latin names, one-device-at-a-time with takeover, snapshot contents (window, opt-in notes, no secrets/reminders/monitors), same link shows edits, unchanged data not re-uploaded, offline status, turning off, backups keep the link | `src/test/share.test.ts` |
-| Share relay worker: create/read/update/delete, app-chosen ids (no reuse), single-writer device lock and takeover, token required, origin checks, CORS, expiry, size and format limits | `src/test/share-worker.test.ts` |
+| Relay: doctor-link PIN (lockout), last viewed, vault compare-and-swap, push schedule, due-time windows (weekdays, intervals, end dates, midnight) and VAPID signatures, rate limiting; create/read/update/delete, app-chosen ids (no reuse), single-writer device lock and takeover, token required, origin checks, CORS, expiry, size and format limits | `src/test/share-worker.test.ts` |
 | Share page create/turn-off flow, "not set up" state, doctor view (read-only, axe), turned-off and wrong-key links | `src/test/share-ui.test.tsx` |
 
 These were also checked against the production build in headless Chrome (1 Nov 2026): service worker control, **offline reload + saving a reading offline + persistence after reload**, demo data not appearing in personal history, no requests to any host other than the app's own, no console errors, and mobile and print layouts.
