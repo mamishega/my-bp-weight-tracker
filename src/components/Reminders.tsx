@@ -39,9 +39,9 @@ export function RemindersBar() {
               <p className="text-sm text-amber-900">{r.body}</p>
             </div>
             <div className="flex w-full flex-wrap gap-2 sm:w-auto">
-              <a href={r.href} className="inline-flex min-h-10 items-center rounded-lg border border-teal-700 bg-teal-700 px-3 text-sm font-semibold text-white no-underline hover:bg-teal-800">Open</a>
-              <Button className="min-h-10 text-sm" onClick={() => snooze(r.key)} aria-label={`Snooze ${r.title} for ${data.settings.reminders.snoozeMinutes} minutes`}>Snooze {data.settings.reminders.snoozeMinutes} min</Button>
-              <Button variant="ghost" className="min-h-10 text-sm" onClick={() => dismiss(r.key)} aria-label={`Dismiss ${r.title} for now`}>Dismiss</Button>
+              <a href={r.href} className="inline-flex min-h-10 items-center rounded-lg border border-teal-700 bg-teal-700 px-3 text-sm font-semibold text-white no-underline hover:bg-teal-800">Open<span className="sr-only"> — {r.title}</span></a>
+              <Button className="min-h-10 text-sm" onClick={() => snooze(r.key)}>Snooze {data.settings.reminders.snoozeMinutes} min<span className="sr-only"> — {r.title}</span></Button>
+              <Button variant="ghost" className="min-h-10 text-sm" onClick={() => dismiss(r.key)}>Dismiss<span className="sr-only"> — {r.title}</span></Button>
             </div>
           </li>
         ))}

@@ -4,25 +4,32 @@ import userEvent from '@testing-library/user-event';
 import { StoreProvider } from '../store/Store';
 import { ToastProvider } from '../components/ui';
 import { App } from '../App';
-import { closeStore, DB_NAMES, loadAll } from '../db/db';
+import { closeStore, DB_NAMES, loadAll, enableLock, lock } from '../db/db';
+import { emptyData } from '../lib/defaults';
 
 // jsdom lacks <dialog> methods
 HTMLDialogElement.prototype.showModal ??= function (this: HTMLDialogElement) { this.setAttribute('open', ''); };
 HTMLDialogElement.prototype.close ??= function (this: HTMLDialogElement) { this.removeAttribute('open'); };
 
-function renderApp(hash = '#/') {
-  window.location.hash = hash;
+async function setHash(hash: string) {
+  if (window.location.hash === hash) return;
+  await new Promise<void>((r) => { window.addEventListener('hashchange', () => r(), { once: true }); window.location.hash = hash; });
+}
+
+async function renderApp(hash = '#/') {
+  await setHash(hash);
   return render(<StoreProvider initialMode="real"><ToastProvider><App /></ToastProvider></StoreProvider>);
 }
 
 beforeEach(async () => {
   await closeStore('real');
+  lock('real');
   for (const n of Object.values(DB_NAMES)) await new Promise((r) => { const q = indexedDB.deleteDatabase(n); q.onsuccess = q.onerror = q.onblocked = () => r(null); });
 });
 
 describe('accessible forms and navigation', () => {
   it('dashboard starts empty and navigation links are keyboard-reachable', async () => {
-    renderApp('#/');
+    await renderApp('#/');
     expect(await screen.findByText(/your dashboard is empty/i)).toBeInTheDocument();
     const nav = screen.getByRole('navigation', { name: 'Main' });
     for (const label of ['Dashboard', 'Add Reading', 'Medication & Supply', 'Weight', 'Symptoms & Lifestyle', 'Trends & Weekly Review', 'History & Reports', 'Appointments', 'Settings & Backups']) {
@@ -34,7 +41,7 @@ describe('accessible forms and navigation', () => {
 
   it('add reading: labelled fields, clear errors, saves a two-reading session with average', async () => {
     const user = userEvent.setup();
-    renderApp('#/add?type=morning_pre');
+    await renderApp('#/add?type=morning_pre');
     const sys = await screen.findAllByLabelText(/Systolic \(top\)/);
     const dia = screen.getAllByLabelText(/Diastolic \(bottom\)/);
     expect(sys).toHaveLength(2);
@@ -57,7 +64,7 @@ describe('accessible forms and navigation', () => {
 
   it('unusual values need confirmation but can be saved', async () => {
     const user = userEvent.setup();
-    renderApp('#/add?type=evening');
+    await renderApp('#/add?type=evening');
     await user.click(await screen.findByRole('button', { name: /Single reading/ }));
     await user.type(screen.getByLabelText(/Systolic \(top\)/), '238');
     await user.type(screen.getByLabelText(/Diastolic \(bottom\)/), '142');
@@ -75,7 +82,7 @@ describe('accessible forms and navigation', () => {
   });
 
   it('symptoms page shows urgent guidance before the form', async () => {
-    renderApp('#/symptoms');
+    await renderApp('#/symptoms');
     const urgent = await screen.findByRole('heading', { name: /Urgent symptoms\? Call Triple Zero \(000\) now/ });
     const field = screen.getByLabelText(/What are you experiencing/);
     expect(urgent.compareDocumentPosition(field) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -85,7 +92,7 @@ describe('accessible forms and navigation', () => {
 describe('regressions found in review', () => {
   it('number settings can be cleared and retyped', async () => {
     const user = userEvent.setup();
-    renderApp('#/settings');
+    await renderApp('#/settings');
     const f = await screen.findByLabelText('Every (days)');
     await user.clear(f);
     await user.type(f, '14');
@@ -95,7 +102,7 @@ describe('regressions found in review', () => {
 
   it('weight milestone accepts decimals while typing', async () => {
     const user = userEvent.setup();
-    renderApp('#/weight');
+    await renderApp('#/weight');
     await user.click(await screen.findByRole('button', { name: /Set goal/ }));
     await user.click(screen.getByRole('button', { name: 'Add milestone' }));
     const f = screen.getByLabelText(/^At \(kg\)/);
@@ -105,7 +112,7 @@ describe('regressions found in review', () => {
 
   it('invalid custom date range shows an error instead of doing nothing', async () => {
     const user = userEvent.setup();
-    renderApp('#/trends');
+    await renderApp('#/trends');
     const from = await screen.findByLabelText('From');
     const to = screen.getByLabelText('To');
     await user.clear(from); await user.type(from, '2026-11-10');
@@ -113,4 +120,50 @@ describe('regressions found in review', () => {
     await user.click(screen.getByRole('button', { name: 'Apply custom range' }));
     expect(await screen.findByText(/must be on or before/)).toBeInTheDocument();
   });
+});
+
+describe('unsaved changes guard', () => {
+  it('asks before leaving a half-filled reading, and can stay or leave', async () => {
+    const user = userEvent.setup();
+    await renderApp('#/add?type=evening');
+    const sys = (await screen.findAllByLabelText(/Systolic \(top\)/))[0];
+    await user.type(sys, '133');
+    const nav = screen.getByRole('navigation', { name: 'Main' });
+    await user.click(within(nav).getByRole('link', { name: 'Weight' }));
+    expect(await screen.findByText('Leave without saving?')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Stay and keep editing' }));
+    expect(sys).toHaveValue('133');
+    expect(window.location.hash).toContain('/add');
+    await user.click(within(nav).getByRole('link', { name: 'Weight' }));
+    await user.click(await screen.findByRole('button', { name: 'Leave and discard' }));
+    await waitFor(() => expect(window.location.hash).toBe('#/weight'));
+  });
+
+  it('does not ask after a successful save', async () => {
+    const user = userEvent.setup();
+    await renderApp('#/add?type=evening');
+    await user.click(await screen.findByRole('button', { name: /Single reading/ }));
+    await user.type(screen.getByLabelText(/Systolic \(top\)/), '128');
+    await user.type(screen.getByLabelText(/Diastolic \(bottom\)/), '80');
+    await user.click(screen.getByRole('button', { name: 'Save reading' }));
+    await waitFor(() => expect(window.location.hash).toBe('#/'));
+    expect(screen.queryByText('Leave without saving?')).not.toBeInTheDocument();
+  });
+});
+
+describe('passcode lock screen', () => {
+  it('shows the lock screen with urgent help, rejects a wrong passcode and unlocks', async () => {
+    await enableLock('real', 'blue kettle', emptyData());
+    lock('real');
+    const user = userEvent.setup();
+    await renderApp('#/');
+    expect(await screen.findByRole('heading', { name: /Enter passcode/ })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /Urgent symptoms\? Call Triple Zero/ })).toBeInTheDocument();
+    await user.type(screen.getByLabelText('Passcode'), 'wrong one');
+    await user.click(screen.getByRole('button', { name: 'Unlock' }));
+    expect(await screen.findByText(/not correct/)).toBeInTheDocument();
+    await user.type(screen.getByLabelText('Passcode'), 'blue kettle');
+    await user.click(screen.getByRole('button', { name: 'Unlock' }));
+    expect(await screen.findByText(/your dashboard is empty/i, {}, { timeout: 5000 })).toBeInTheDocument();
+  }, 20000);
 });

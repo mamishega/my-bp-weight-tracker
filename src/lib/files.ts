@@ -26,7 +26,7 @@ export async function saveFile(name: string, content: string, mime: string): Pro
       const ext = name.slice(name.lastIndexOf('.'));
       const handle = await w.showSaveFilePicker({
         suggestedName: name,
-        types: [{ description: ext === '.json' ? 'JSON backup' : 'CSV file', accept: { [mime]: [ext] } }],
+        types: [{ description: ext === '.json' ? 'JSON backup' : ext === '.ics' ? 'Calendar file' : 'CSV file', accept: { [mime]: [ext] } }],
       });
       const writable = await handle.createWritable();
       await writable.write(blob);

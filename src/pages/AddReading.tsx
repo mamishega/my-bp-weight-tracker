@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useStore } from '../store/Store';
-import { useRoute, navigate } from '../store/router';
+import { useRoute, navigate, allowNextNavigation } from '../store/router';
 import { useDirtyForm } from '../store/dirty';
 import type { Arm, BPSession, ConditionFlag, SessionType } from '../types';
 import { SESSION_LABEL, SESSION_STYLE, CONDITION_LABEL, validateReading, sessionAverage, fmtBP, type FieldIssue } from '../lib/bp';
@@ -138,6 +138,7 @@ function ReadingForm({ existing, initialType }: { existing?: BPSession; initialT
     await put('sessions', rec);
     if (saveDefaults) await saveSettings({ ...settings, defaultArm: (arm || null) as Arm | null, defaultMonitorId: monitorId || null });
     setDirty(false);
+    allowNextNavigation();
     const leave = () => (existing && window.history.length > 1 ? window.history.back() : navigate('/'));
     toast(`${SESSION_LABEL[rec.sessionType]} saved: ${fmtBP(sessionAverage(rec).systolic, sessionAverage(rec).diastolic)} mmHg${rec.readings.length === 1 ? ' (single reading)' : ' (average of 2)'}.`);
     leave();
@@ -147,6 +148,7 @@ function ReadingForm({ existing, initialType }: { existing?: BPSession; initialT
     if (!existing) return;
     await remove('sessions', existing.id);
     setDirty(false);
+    allowNextNavigation();
     toast('Session deleted.', 'info');
     navigate('/history');
   };

@@ -18,7 +18,7 @@ export function StatsTable({ data, from, to }: { data: AppData; from: ISODate; t
   return (
     <div>
       <p className="mb-2 text-sm text-slate-600">Each session type is summarised separately. They are never combined.</p>
-      <div className="overflow-x-auto rounded-lg ring-1 ring-slate-200">
+      <div tabIndex={0} className="overflow-x-auto rounded-lg ring-1 ring-slate-200">
       <table className="w-full text-left text-sm [&_td]:px-3 [&_td]:py-2.5 [&_th]:px-3 [&_th]:py-2.5">
         <caption className="sr-only">Blood pressure summary by session type</caption>
         <thead><tr className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-500"><th className="p-2" scope="col">Session type</th><th className="p-2" scope="col">Sessions</th><th className="p-2" scope="col">Readings</th><th className="p-2" scope="col">Single-reading</th><th className="p-2" scope="col">Average (mmHg)</th><th className="p-2" scope="col">Avg pulse</th><th className="p-2" scope="col">Range of readings</th></tr></thead>
@@ -76,7 +76,7 @@ function MedHistoryGrid({ data, from, to }: { data: AppData; from: ISODate; to: 
   const meds = data.medications;
   if (meds.length === 0) return <Empty>No medications added.</Empty>;
   return (
-    <div className="overflow-x-auto">
+    <div tabIndex={0} className="overflow-x-auto">
       <table className="text-center text-xs">
         <thead><tr><th className="p-1 text-left">Medication</th>{days.map((d) => <th key={d} scope="col" className="p-0.5 font-normal text-slate-600">{d.slice(8)}</th>)}</tr></thead>
         <tbody>
@@ -115,13 +115,13 @@ function WeeklyReview() {
   return (
     <Card title="Weekly review" subtitle="A supportive look at what you recorded" icon="calendar" actions={
       <div className="flex gap-2">
-        <Button icon="chevronLeft" onClick={() => setWs(addDays(ws, -7))} aria-label="Previous week">Prev</Button>
-        <Button onClick={() => setWs(addDays(ws, 7))} disabled={addDays(ws, 7) > today} aria-label="Next week">Next <span aria-hidden="true">›</span></Button>
+        <Button icon="chevronLeft" onClick={() => setWs(addDays(ws, -7))}>Previous week</Button>
+        <Button onClick={() => setWs(addDays(ws, 7))} disabled={addDays(ws, 7) > today} >Next week <span aria-hidden="true">›</span></Button>
       </div>
     }>
       <p className="mb-3 font-medium">{formatDateShort(ws)} – {formatDateShort(we)}</p>
       <h3 className="font-semibold">Measurement sessions</h3>
-      <div className="overflow-x-auto">
+      <div tabIndex={0} className="overflow-x-auto">
         <table className="w-full text-center text-sm">
           <thead><tr><th className="p-1 text-left">Session</th>{days.map((d) => <th key={d} scope="col" className="p-1 font-normal">{formatDateShort(d).split(',')[0]}</th>)}<th className="p-1">Recorded</th></tr></thead>
           <tbody>
@@ -211,7 +211,7 @@ export function TrendsPage() {
         <details className="mt-3">
           <summary className="min-h-11 cursor-pointer py-2 font-medium">Show blood pressure data as a table</summary>
           {sessions.length === 0 ? <Empty>No readings.</Empty> : (
-            <div className="overflow-x-auto rounded-lg ring-1 ring-slate-200">
+            <div tabIndex={0} className="overflow-x-auto rounded-lg ring-1 ring-slate-200">
               <table className="w-full text-left text-sm [&_td]:px-3 [&_td]:py-2.5 [&_th]:px-3 [&_th]:py-2.5">
                 <thead><tr className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-500"><th className="p-2">Day</th><th className="p-2">Session</th><th className="p-2">Time</th><th className="p-2">Original readings</th><th className="p-2">Session average</th><th className="p-2">Pulse</th></tr></thead>
                 <tbody>
@@ -230,7 +230,7 @@ export function TrendsPage() {
         {comp.days.length === 0 ? <Empty>No days in this period have both a before- and after-medication session.</Empty> : (
           <>
             <p className="mb-2">On <strong>{comp.days.length}</strong> day{comp.days.length === 1 ? '' : 's'} with both sessions, the after-medication session average differed from the before-medication average by <strong>{fmt(comp.meanDiffSys)}</strong> mmHg systolic and <strong>{fmt(comp.meanDiffDia)}</strong> mmHg diastolic on average (negative = lower after).</p>
-            <div className="overflow-x-auto rounded-lg ring-1 ring-slate-200">
+            <div tabIndex={0} className="overflow-x-auto rounded-lg ring-1 ring-slate-200">
               <table className="w-full text-left text-sm [&_td]:px-3 [&_td]:py-2.5 [&_th]:px-3 [&_th]:py-2.5">
                 <thead><tr className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-500"><th className="p-2">Day</th><th className="p-2">Before</th><th className="p-2">After</th><th className="p-2">Observed difference</th></tr></thead>
                 <tbody>{comp.days.map((d) => <tr key={d.date} className="border-b border-slate-100"><td className="p-2">{formatDateShort(d.date)}</td><td className="p-2">{fmtBP(d.pre.systolic, d.pre.diastolic)}</td><td className="p-2">{fmtBP(d.post.systolic, d.post.diastolic)}</td><td className="p-2">{fmt(d.diffSystolic)} / {fmt(d.diffDiastolic)}</td></tr>)}</tbody>

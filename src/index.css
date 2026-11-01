@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./theme-dark.css";
 
 @layer base {
   html { -webkit-text-size-adjust: 100%; }
@@ -9,7 +10,7 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
-    background: #f5f7f9;
+    background: var(--app-bg);
   }
   h1, h2, h3 { text-wrap: balance; }
   a { color: #115e59; text-underline-offset: 3px; text-decoration-thickness: 1px; }

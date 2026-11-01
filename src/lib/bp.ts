@@ -15,9 +15,9 @@ export const SESSION_SHORT: Record<SessionType, string> = {
 /** Categorical colours (validated reference palette slots 1–3) plus a symbol
  * so session identity never relies on colour alone. */
 export const SESSION_STYLE: Record<SessionType, { color: string; shape: 'circle' | 'triangle' | 'square'; symbol: string }> = {
-  morning_pre: { color: '#2a78d6', shape: 'circle', symbol: '●' },
-  morning_post: { color: '#eb6834', shape: 'triangle', symbol: '▲' },
-  evening: { color: '#1baf7a', shape: 'square', symbol: '■' },
+  morning_pre: { color: 'var(--series-1)', shape: 'circle', symbol: '●' },
+  morning_post: { color: 'var(--series-2)', shape: 'triangle', symbol: '▲' },
+  evening: { color: 'var(--series-3)', shape: 'square', symbol: '■' },
 };
 
 export const CONDITION_LABEL: Record<ConditionFlag, string> = {

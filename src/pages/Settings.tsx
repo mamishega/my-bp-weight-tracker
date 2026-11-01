@@ -1,15 +1,25 @@
 import { useEffect, useState } from 'react';
 import { useStore } from '../store/Store';
-import type { Arm, Monitor, Settings, WeightUnit } from '../types';
+import type { Arm, CollectionName, Monitor, Settings, WeightUnit } from '../types';
 import { NumberField, Badge, Button, Card, Checkbox, Modal, Notice, PageTitle, RadioGroup, SelectField, TextArea, TextField, TypedConfirm, useToast } from '../components/ui';
 import { BackupNowButton, LastBackup } from '../components/Backup';
 import { PrivacySummary, SafetyStatement, UrgentHelp } from '../components/safety';
 import { applyMerge, applyReplace, planImport, validateBackup, type BackupFile, type ImportPlan, type MergeOptions } from '../lib/backup';
-import { readFileText } from '../lib/files';
+import { readFileText, saveFile } from '../lib/files';
+import { buildIcs, reminderEvents } from '../lib/ics';
+import { Icon } from '../components/Icon';
 import { emptyData, uid } from '../lib/defaults';
 import { isValidTimeZone, listTimeZones, formatDateShort, localDateOf, formatTime } from '../lib/time';
 import { requestPersistence } from '../db/db';
+import { cryptoAvailable, passcodeProblem } from '../lib/crypto';
+import { getTheme, setTheme, type ThemePref } from '../lib/theme';
 
+
+const STORE_LABEL: Record<CollectionName, string> = {
+  sessions: 'Blood pressure sessions', doses: 'Medication doses', medications: 'Medications', stock: 'Supply counts and refills',
+  weights: 'Weight entries', dailyLogs: 'Daily lifestyle notes', habits: 'Habit goals', habitChecks: 'Completed habits',
+  symptoms: 'Symptoms', appointments: 'Appointments', questions: 'Questions for doctor', reminderStates: 'Snoozed or dismissed reminders',
+};
 
 function TargetsCard() {
   const { data, saveSettings } = useStore();
@@ -119,6 +129,8 @@ function RemindersCard() {
   const st = data.settings;
   const r = st.reminders;
   const perm = typeof Notification === 'undefined' ? 'unsupported' : Notification.permission;
+  const noTime = data.medications.filter((m) => m.active && !m.usualTime);
+  const noInterval = data.medications.filter((m) => m.active && m.postDoseReminderMinutes == null);
   const set = (patch: Partial<Settings['reminders']>) => saveSettings({ ...st, reminders: { ...r, ...patch } });
   const enableNotifications = async (on: boolean) => {
     if (!on) return saveSettings({ ...st, notificationsEnabled: false });
@@ -128,6 +140,12 @@ function RemindersCard() {
     else toast('Notification permission was not granted. In-app reminders still work.', 'warn');
   };
   const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const exportCalendar = async () => {
+    const out = await saveFile('health-reminders.ics', buildIcs(data), 'text/calendar');
+    if (out.status === 'cancelled') return toast('Calendar export cancelled.', 'warn');
+    if (out.status === 'failed') return toast(`Export failed: ${out.error}`, 'danger');
+    toast('Calendar file ready. Open it to add the reminders to your calendar.');
+  };
   return (
     <Card title="Reminders" icon="bell" iconTone="orange">
       <Notice tone="warn" title="What reminders can and can’t do">
@@ -139,6 +157,8 @@ function RemindersCard() {
           <TextField label="Time" type="time" value={r.morningPre.time} onChange={(e) => e.target.value && set({ morningPre: { ...r.morningPre, time: e.target.value } })} />
         </div>
         <Checkbox label="Morning medication (at each medicine’s usual time)" checked={r.medication.enabled} onChange={(v) => set({ medication: { enabled: v } })} hint="Asks you to record taken or skipped. It never marks a dose for you." />
+        {r.medication.enabled && noTime.length > 0 && <Notice tone="warn" title="Some medicines have no usual time">No reminder can be shown for {noTime.map((m) => m.name).join(', ')}. Add a usual time on the <a href="#/medication">Medication page</a>.</Notice>}
+        {r.postDose.enabled && noInterval.length > 0 && <Notice tone="info">No after-medication reminder for {noInterval.map((m) => m.name).join(', ')} — no interval has been entered. Only add one if your clinician asked for after-medication readings.</Notice>}
         <Checkbox label="After-medication reading" checked={r.postDose.enabled} onChange={(v) => set({ postDose: { enabled: v } })} hint="Timed from the actual recorded dose time, using the interval you entered for each medication from your clinician’s instructions." />
         <div className="grid items-end gap-3 sm:grid-cols-[1fr_10rem]">
           <Checkbox label="Evening reading" checked={r.evening.enabled} onChange={(v) => set({ evening: { ...r.evening, enabled: v } })} />
@@ -166,6 +186,15 @@ function RemindersCard() {
           {[5, 10, 15, 30, 60].map((m) => <option key={m} value={m}>{m} minutes</option>)}
         </SelectField>
         <Checkbox label="Also show browser notifications" checked={st.notificationsEnabled && perm === 'granted'} onChange={enableNotifications} hint={`Permission is only requested when you turn this on. Current permission: ${perm}.`} />
+      </div>
+      <div className="mt-5 rounded-xl bg-slate-50 p-4 ring-1 ring-slate-200">
+        <h3 className="flex items-center gap-2 font-semibold text-slate-900"><Icon name="calendar" className="h-[18px] w-[18px] text-teal-700" /> Reliable reminders when the app is closed</h3>
+        <p className="mt-1 text-sm text-slate-600">Add your reminder schedule to your phone’s calendar. Calendar alerts work even when this app is closed. Titles are generic — no medication names or readings — because calendars are often synced online. After-medication, refill, backup and appointment reminders depend on your records, so they stay in-app.</p>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <Button icon="download" disabled={reminderEvents(data).length === 0} onClick={exportCalendar}>Add reminders to my calendar (.ics)</Button>
+          {reminderEvents(data).length === 0 && <span className="text-sm text-slate-500">Turn on at least one timed reminder above first.</span>}
+        </div>
+        <p className="mt-2 text-xs text-slate-500">If you change times later, export again and delete the old events in your calendar.</p>
       </div>
     </Card>
   );
@@ -214,10 +243,10 @@ function RestoreCard() {
           <Notice tone="info" title="Backup preview">
             <p>Created {formatDateShort(localDateOf(backup.exportedAt, data.settings.timeZone))} {formatTime(backup.exportedAt, data.settings.timeZone)} (time zone {backup.exportedTimeZone}), {plan.totalIncoming} records.</p>
           </Notice>
-          <div className="overflow-x-auto rounded-lg ring-1 ring-slate-200">
+          <div tabIndex={0} className="overflow-x-auto rounded-lg ring-1 ring-slate-200">
             <table className="w-full text-left text-sm [&_td]:px-3 [&_td]:py-2.5 [&_th]:px-3 [&_th]:py-2.5">
               <thead><tr className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-500"><th className="p-1">Type</th><th className="p-1">In backup</th><th className="p-1">New</th><th className="p-1">Already identical</th><th className="p-1">Same ID, different content</th><th className="p-1">Possible duplicates</th></tr></thead>
-              <tbody>{plan.stores.filter((s) => s.incoming || data[s.name].length).map((s) => <tr key={s.name} className="border-b border-slate-100"><td className="p-1">{s.name}</td><td className="p-1">{s.incoming}</td><td className="p-1">{s.newRecords.length}</td><td className="p-1">{s.identical}</td><td className="p-1">{s.conflicts.length}</td><td className="p-1">{s.possibleDuplicates.length}</td></tr>)}</tbody>
+              <tbody>{plan.stores.filter((s) => s.incoming || data[s.name].length).map((s) => <tr key={s.name} className="border-b border-slate-100"><td className="p-1">{STORE_LABEL[s.name]}</td><td className="p-1">{s.incoming}</td><td className="p-1">{s.newRecords.length}</td><td className="p-1">{s.identical}</td><td className="p-1">{s.conflicts.length}</td><td className="p-1">{s.possibleDuplicates.length}</td></tr>)}</tbody>
             </table>
           </div>
           <RadioGroup name="restore-strategy" legend="How should the backup be used?" value={strategy} onChange={setStrategy} options={[
@@ -285,10 +314,79 @@ function StorageCard() {
   );
 }
 
+function PasscodeCard() {
+  const { lockEnabled, enableLock, disableLock, lockNow, mode } = useStore();
+  const toast = useToast();
+  const [open, setOpen] = useState<'enable' | 'disable' | null>(null);
+  const [p1, setP1] = useState('');
+  const [p2, setP2] = useState('');
+  const [ack, setAck] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const close = () => { setOpen(null); setP1(''); setP2(''); setAck(false); setErr(null); };
+  const doEnable = async () => {
+    const problem = passcodeProblem(p1);
+    if (problem) return setErr(problem);
+    if (p1 !== p2) return setErr('The two passcodes don’t match.');
+    if (!ack) return setErr('Please confirm you understand the passcode can’t be recovered.');
+    setBusy(true);
+    try { await enableLock(p1); toast('Passcode lock is on. Your records are now encrypted on this device.'); close(); }
+    catch (e) { setErr(`Could not turn on the lock: ${(e as Error).message}`); }
+    finally { setBusy(false); }
+  };
+  const doDisable = async () => {
+    setBusy(true);
+    const ok = await disableLock(p1);
+    setBusy(false);
+    if (!ok) return setErr('That passcode is not correct.');
+    toast('Passcode lock is off. Records are stored unencrypted again.', 'info');
+    close();
+  };
+  if (!cryptoAvailable()) return null;
+  return (
+    <Card title="Passcode lock" subtitle="Optional encryption of your records on this device" icon="shield" iconTone="teal">
+      <div className="flex flex-wrap items-center gap-2">
+        {lockEnabled ? <Badge tone="ok">On — records encrypted</Badge> : <Badge>Off — records not encrypted</Badge>}
+      </div>
+      <p className="mt-2 text-sm text-slate-600">
+        With a passcode, records and settings in this browser are encrypted (AES-256-GCM, key derived from your passcode). The app asks for it when opened and locks again after 5 minutes in the background.
+        {mode === 'demo' && ' (This applies to the demo database only while in demo mode.)'}
+      </p>
+      <p className="mt-1 text-sm text-slate-600">Backup files you export are <strong>not</strong> encrypted — keep them private.</p>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {lockEnabled ? (
+          <>
+            <Button icon="shield" onClick={lockNow}>Lock now</Button>
+            <Button variant="ghost" onClick={() => setOpen('disable')}>Turn off passcode…</Button>
+          </>
+        ) : (
+          <Button variant="primary" icon="shield" onClick={() => setOpen('enable')}>Set a passcode…</Button>
+        )}
+      </div>
+      <Modal open={open === 'enable'} onClose={close} title="Set a passcode" footer={<><Button onClick={close}>Cancel</Button><Button variant="primary" disabled={busy} onClick={doEnable}>{busy ? 'Encrypting…' : 'Turn on lock'}</Button></>}>
+        <div className="flex flex-col gap-3">
+          <Notice tone="warn" title="There is no way to recover a forgotten passcode">If you forget it, the records on this device can’t be opened. Make a backup first so you can restore if needed.</Notice>
+          <BackupNowButton variant="secondary" />
+          <TextField label="New passcode" type="password" autoComplete="new-password" value={p1} onChange={(e) => { setP1(e.target.value); setErr(null); }} hint="At least 6 characters. A short phrase is easier to remember." />
+          <TextField label="Confirm passcode" type="password" autoComplete="new-password" value={p2} onChange={(e) => { setP2(e.target.value); setErr(null); }} error={err} />
+          <Checkbox label="I understand the passcode can’t be recovered" checked={ack} onChange={setAck} />
+        </div>
+      </Modal>
+      <Modal open={open === 'disable'} onClose={close} title="Turn off passcode" footer={<><Button onClick={close}>Cancel</Button><Button variant="danger" disabled={busy} onClick={doDisable}>Turn off and decrypt</Button></>}>
+        <div className="flex flex-col gap-3">
+          <p>Records will be stored unencrypted in this browser again.</p>
+          <TextField label="Current passcode" type="password" autoComplete="current-password" value={p1} onChange={(e) => { setP1(e.target.value); setErr(null); }} error={err} />
+        </div>
+      </Modal>
+    </Card>
+  );
+}
+
 function GeneralCard() {
   const { data, saveSettings } = useStore();
   const st = data.settings;
   const zones = listTimeZones();
+  const [theme, setThemeState] = useState<ThemePref>(getTheme());
   return (
     <Card title="General" icon="sliders" iconTone="slate">
       <div className="grid gap-3 sm:grid-cols-2">
@@ -297,6 +395,9 @@ function GeneralCard() {
         </SelectField>
         <SelectField label="Weight unit" value={st.weightUnit} onChange={(e) => saveSettings({ ...st, weightUnit: e.target.value as WeightUnit })}>
           <option value="kg">Kilograms (kg)</option><option value="lb">Pounds (lb)</option>
+        </SelectField>
+        <SelectField label="Appearance" value={theme} onChange={(e) => { const v = e.target.value as ThemePref; setThemeState(v); setTheme(v); }}>
+          <option value="system">Match my device</option><option value="light">Light</option><option value="dark">Dark</option>
         </SelectField>
       </div>
     </Card>
@@ -313,6 +414,7 @@ export function SettingsPage() {
         <Notice tone="warn">Backup files contain sensitive personal health information and are not encrypted. Keep them somewhere private.</Notice>
       </Card>
       <RestoreCard />
+      <PasscodeCard />
       <GeneralCard />
       <TargetsCardKeyed />
       <MonitorsCard />

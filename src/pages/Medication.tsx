@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useRoute } from '../store/router';
 import { useStore } from '../store/Store';
 import { useDirtyForm } from '../store/dirty';
 import type { DoseRecord, DoseStatus, Medication, StockEvent } from '../types';
@@ -162,7 +163,13 @@ export function MedicationPage() {
   const tz = data.settings.timeZone;
   const today = todayIn(tz);
   const [edit, setEdit] = useState<Medication | 'new' | null>(null);
-  const [doseFor, setDoseFor] = useState<{ med: Medication; dose?: DoseRecord; status?: DoseStatus; date?: string } | null>(null);
+  const { params } = useRoute();
+  const [doseFor, setDoseFor] = useState<{ med: Medication; dose?: DoseRecord; status?: DoseStatus; date?: string } | null>(() => {
+    // Deep link from History: #/medication?dose=<id>
+    const d = data.doses.find((x) => x.id === params.get('dose'));
+    const m = d && data.medications.find((x) => x.id === d.medicationId);
+    return d && m ? { med: m, dose: d } : null;
+  });
   const [delDose, setDelDose] = useState<DoseRecord | null>(null);
   const meds = [...data.medications].sort((a, b) => Number(b.active) - Number(a.active));
   const dupes = findDuplicateDoses(data.doses);
@@ -187,7 +194,7 @@ export function MedicationPage() {
                 <Button onClick={() => setDoseFor({ med: m, status: 'skipped', date: today })}>Record skipped</Button>
               </div>
             )}
-            <div className="mt-3 overflow-x-auto">
+            <div tabIndex={0} className="mt-3 overflow-x-auto">
               <table className="text-center text-sm">
                 <caption className="text-left text-sm font-medium">Last 14 days</caption>
                 <thead><tr>{days.map((d) => <th key={d} scope="col" className="px-1 font-normal text-slate-600">{d.slice(8)}</th>)}</tr></thead>
@@ -212,7 +219,7 @@ export function MedicationPage() {
 
       <Card title="Dose records" subtitle="Most recent 60" icon="list" iconTone="slate">
         {recent.length === 0 ? <Empty>No doses recorded yet.</Empty> : (
-          <div className="overflow-x-auto rounded-lg ring-1 ring-slate-200">
+          <div tabIndex={0} className="overflow-x-auto rounded-lg ring-1 ring-slate-200">
             <table className="w-full text-left text-sm [&_td]:px-3 [&_td]:py-2.5 [&_th]:px-3 [&_th]:py-2.5">
               <thead><tr className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-500"><th className="p-2">Date</th><th className="p-2">Medication</th><th className="p-2">Status</th><th className="p-2">Time taken</th><th className="p-2">Notes</th><th className="p-2"><span className="sr-only">Actions</span></th></tr></thead>
               <tbody>

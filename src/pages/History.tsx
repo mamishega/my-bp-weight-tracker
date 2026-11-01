@@ -58,19 +58,19 @@ export function HistoryPage() {
       if (!inRange(d.date)) continue;
       const issues = d.status === 'taken' && !d.takenAt;
       if (onlyIssues && !issues && !dDupes.has(d.id)) continue;
-      rows.push({ key: d.id, sortAt: d.takenAt ?? `${d.date}T00:00`, date: d.date, kind: 'dose', title: `${d.nameSnapshot} ${d.doseSnapshot}`, detail: <>{d.status === 'taken' ? 'Taken' : 'Skipped'}{d.takenAt && ` at ${formatTime(d.takenAt, d.timeZone, tz)}`}{d.notes && <span className="block text-slate-600">{d.notes}</span>}</>, flags: <>{issues && <Badge tone="warn">Medication time unknown</Badge>}{dDupes.has(d.id) && <Badge tone="warn">Possible duplicate</Badge>}</>, edit: '#/medication', onDelete: () => remove('doses', d.id) });
+      rows.push({ key: d.id, sortAt: d.takenAt ?? `${d.date}T00:00`, date: d.date, kind: 'dose', title: `${d.nameSnapshot} ${d.doseSnapshot}`, detail: <>{d.status === 'taken' ? 'Taken' : 'Skipped'}{d.takenAt && ` at ${formatTime(d.takenAt, d.timeZone, tz)}`}{d.notes && <span className="block text-slate-600">{d.notes}</span>}</>, flags: <>{issues && <Badge tone="warn">Medication time unknown</Badge>}{dDupes.has(d.id) && <Badge tone="warn">Possible duplicate</Badge>}</>, edit: `#/medication?dose=${d.id}`, onDelete: () => remove('doses', d.id) });
     }
   }
   if ((kind === 'all' && stype === 'all') || kind === 'weight') {
     for (const w of data.weights) {
       if (!inRange(w.date) || (onlyIssues && !wDupes.has(w.id))) continue;
-      rows.push({ key: w.id, sortAt: w.measuredAt ?? `${w.date}T00:00`, date: w.date, kind: 'weight', title: 'Weight', detail: <>{fmtWeight(w.kg, data.settings.weightUnit)} (entered {w.enteredValue} {w.enteredUnit}){w.measuredAt && ` · ${formatTime(w.measuredAt, w.timeZone, tz)}`}{w.notes && <span className="block text-slate-600">{w.notes}</span>}</>, flags: wDupes.has(w.id) ? <Badge tone="warn">Possible duplicate</Badge> : null, edit: '#/weight', onDelete: () => remove('weights', w.id) });
+      rows.push({ key: w.id, sortAt: w.measuredAt ?? `${w.date}T00:00`, date: w.date, kind: 'weight', title: 'Weight', detail: <>{fmtWeight(w.kg, data.settings.weightUnit)} (entered {w.enteredValue} {w.enteredUnit}){w.measuredAt && ` · ${formatTime(w.measuredAt, w.timeZone, tz)}`}{w.notes && <span className="block text-slate-600">{w.notes}</span>}</>, flags: wDupes.has(w.id) ? <Badge tone="warn">Possible duplicate</Badge> : null, edit: `#/weight?edit=${w.id}`, onDelete: () => remove('weights', w.id) });
     }
   }
   if ((kind === 'all' && stype === 'all') || kind === 'symptom') {
     for (const s of data.symptoms) {
       if (!inRange(s.date) || (onlyIssues && !syDupes.has(s.id))) continue;
-      rows.push({ key: s.id, sortAt: s.occurredAt, date: s.date, kind: 'symptom', title: 'Symptom', detail: <>{s.description}{s.severity && ` · ${s.severity}`} · {formatTime(s.occurredAt, s.timeZone, tz)}</>, flags: syDupes.has(s.id) ? <Badge tone="warn">Possible duplicate</Badge> : null, edit: '#/symptoms', onDelete: () => remove('symptoms', s.id) });
+      rows.push({ key: s.id, sortAt: s.occurredAt, date: s.date, kind: 'symptom', title: 'Symptom', detail: <>{s.description}{s.severity && ` · ${s.severity}`} · {formatTime(s.occurredAt, s.timeZone, tz)}</>, flags: syDupes.has(s.id) ? <Badge tone="warn">Possible duplicate</Badge> : null, edit: `#/symptoms?tab=symptoms&edit=${s.id}`, onDelete: () => remove('symptoms', s.id) });
     }
   }
   rows.sort((a, b) => b.date.localeCompare(a.date) || b.sortAt.localeCompare(a.sortAt));
@@ -104,7 +104,7 @@ export function HistoryPage() {
       </Card>
       <Card title={`Records (${rows.length})`} icon="list" iconTone="slate">
         {rows.length === 0 ? <Empty>No records match these filters.</Empty> : (
-          <div className="overflow-x-auto rounded-lg ring-1 ring-slate-200">
+          <div tabIndex={0} className="overflow-x-auto rounded-lg ring-1 ring-slate-200">
             <table className="w-full text-left text-sm [&_td]:px-3 [&_td]:py-2.5 [&_th]:px-3 [&_th]:py-2.5">
               <thead><tr className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-500"><th className="p-2" scope="col">Day</th><th className="p-2" scope="col">Record</th><th className="p-2" scope="col">Details</th><th className="p-2" scope="col">Data quality</th><th className="p-2" scope="col"><span className="sr-only">Actions</span></th></tr></thead>
               <tbody>

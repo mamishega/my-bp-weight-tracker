@@ -75,7 +75,8 @@ function SymptomForm({ existing, onDone }: { existing?: SymptomEntry; onDone: ()
 
 function SymptomsTab() {
   const { data, remove } = useStore();
-  const [edit, setEdit] = useState<SymptomEntry | null>(null);
+  const { params } = useRoute();
+  const [edit, setEdit] = useState<SymptomEntry | null>(() => data.symptoms.find((x) => x.id === params.get('edit')) ?? null);
   const [del, setDel] = useState<SymptomEntry | null>(null);
   const dupes = findDuplicateSymptoms(data.symptoms);
   const list = [...data.symptoms].sort((a, b) => b.occurredAt.localeCompare(a.occurredAt));
@@ -230,7 +231,7 @@ function HabitsTab() {
       </Card>
       <Card title="This week" icon="calendar" iconTone="slate">
         {data.habits.length === 0 ? <Empty>No habits chosen yet.</Empty> : (
-          <div className="overflow-x-auto">
+          <div tabIndex={0} className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead><tr><th className="p-2 text-left">Habit</th>{week.map((d) => <th key={d} scope="col" className="p-1 font-normal">{formatDateShort(d).split(' ')[0]}</th>)}<th className="p-2">Done</th><th><span className="sr-only">Actions</span></th></tr></thead>
               <tbody>

@@ -4,8 +4,8 @@ import { SESSION_LABEL, SESSION_STYLE, sessionAverage, fmt, statsFor } from '../
 import { dateToDayNumber, dayNumberToDate, formatDateTiny, formatDateShort, formatTime, instantToZoned, daysBetween } from '../lib/time';
 import { movingAverage7, fromKg } from '../lib/weight';
 
-const GRID = '#e2e8f0';
-const AXIS = '#475569';
+const GRID = 'var(--chart-grid)';
+const AXIS = 'var(--chart-axis)';
 
 function xFor(date: ISODate, iso: string | null, tz: string): number {
   const base = dateToDayNumber(date);
@@ -80,8 +80,8 @@ export function BPChart({ sessions, measure, from, to, target, visible }: { sess
               <CartesianGrid stroke={GRID} vertical={false} />
               <XAxis type="number" dataKey="x" domain={[dateToDayNumber(from), dateToDayNumber(to) + 1]} ticks={ticks(from, to)} tickFormatter={(v: number) => formatDateTiny(dayNumberToDate(Math.floor(v)))} stroke={AXIS} fontSize={12} allowDuplicatedCategory={false} />
               <YAxis type="number" dataKey="y" domain={['dataMin - 8', 'dataMax + 8']} stroke={AXIS} fontSize={12} width={44} tickFormatter={(v: number) => String(Math.round(v))} label={{ value: 'mmHg', angle: -90, position: 'insideLeft', fill: AXIS, fontSize: 12 }} />
-              {target != null && <ReferenceLine y={target} stroke="#64748b" strokeDasharray="4 4" label={{ value: `Your target ${target}`, fill: '#334155', fontSize: 11, position: 'insideTopRight' }} />}
-              <Tooltip content={<Tip />} cursor={{ stroke: '#94a3b8' }} />
+              {target != null && <ReferenceLine y={target} stroke="var(--chart-ref)" strokeDasharray="4 4" label={{ value: `Your target ${target}`, fill: 'var(--chart-axis)', fontSize: 11, position: 'insideTopRight' }} />}
+              <Tooltip content={<Tip />} cursor={{ stroke: 'var(--chart-ref)' }} />
               {series.map((s) => (
                 <Scatter key={s.type} name={SESSION_LABEL[s.type]} data={s.data} fill={SESSION_STYLE[s.type].color} shape={SESSION_STYLE[s.type].shape} line={{ stroke: SESSION_STYLE[s.type].color, strokeWidth: 2 }} lineJointType="linear" isAnimationActive={false} />
               ))}
@@ -104,7 +104,7 @@ export function WeightChart({ weights, from, to, unit, goalKg }: { weights: Weig
   return (
     <figure>
       <figcaption className="mb-1 text-sm font-semibold text-slate-800">Weight — {unit}</figcaption>
-      <Legend items={[{ label: 'Daily weight', color: '#2a78d6', symbol: '●' }, { label: '7-day moving average (days with data only)', color: '#0d366b', symbol: '━' }]} />
+      <Legend items={[{ label: 'Daily weight', color: 'var(--series-1)', symbol: '●' }, { label: '7-day moving average (days with data only)', color: 'var(--series-ma)', symbol: '━' }]} />
       {ma.length === 0 ? (
         <p className="rounded-lg border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">No weight measurements in this period.</p>
       ) : (
@@ -114,10 +114,10 @@ export function WeightChart({ weights, from, to, unit, goalKg }: { weights: Weig
               <CartesianGrid stroke={GRID} vertical={false} />
               <XAxis type="number" dataKey="x" domain={[dateToDayNumber(from), dateToDayNumber(to) + 1]} ticks={ticks(from, to)} tickFormatter={(v: number) => formatDateTiny(dayNumberToDate(Math.floor(v)))} stroke={AXIS} fontSize={12} />
               <YAxis type="number" dataKey="y" domain={['dataMin - 1', 'dataMax + 1']} stroke={AXIS} fontSize={12} width={44} tickFormatter={(v: number) => v.toFixed(0)} label={{ value: unit, angle: -90, position: 'insideLeft', fill: AXIS, fontSize: 12 }} />
-              {goalKg != null && <ReferenceLine y={Math.round(fromKg(goalKg, unit) * 10) / 10} stroke="#64748b" strokeDasharray="4 4" label={{ value: 'Your goal', fill: '#334155', fontSize: 11, position: 'insideTopRight' }} />}
+              {goalKg != null && <ReferenceLine y={Math.round(fromKg(goalKg, unit) * 10) / 10} stroke="var(--chart-ref)" strokeDasharray="4 4" label={{ value: 'Your goal', fill: 'var(--chart-axis)', fontSize: 11, position: 'insideTopRight' }} />}
               <Tooltip content={<Tip />} />
-              <Scatter name="Daily weight" data={daily} fill="#2a78d6" isAnimationActive={false} />
-              <Line data={avg} dataKey="y" type="monotone" stroke="#0d366b" strokeWidth={2} dot={false} isAnimationActive={false} name="7-day average" />
+              <Scatter name="Daily weight" data={daily} fill="var(--series-1)" isAnimationActive={false} />
+              <Line data={avg} dataKey="y" type="monotone" stroke="var(--series-ma)" strokeWidth={2} dot={false} isAnimationActive={false} name="7-day average" />
             </ComposedChart>
           </ResponsiveContainer>
         </div>

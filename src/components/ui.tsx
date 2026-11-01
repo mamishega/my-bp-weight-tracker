@@ -266,7 +266,7 @@ export function Modal({ open, onClose, title, children, footer }: { open: boolea
     }
   }, [open]);
   return (
-    <dialog ref={ref} aria-labelledby={id} onCancel={(e) => { e.preventDefault(); onClose(); }} className="m-auto w-[min(40rem,calc(100vw-1.5rem))] rounded-2xl border border-slate-200 p-0 shadow-2xl backdrop:bg-slate-900/40 backdrop:backdrop-blur-[2px]">
+    <dialog ref={ref} aria-labelledby={id} onCancel={(e) => { e.preventDefault(); onClose(); }} className="m-auto w-[min(40rem,calc(100vw-1.5rem))] rounded-2xl border border-slate-200 p-0 shadow-2xl backdrop:bg-black/50 backdrop:backdrop-blur-[2px]">
       {open && (
         <div className="flex max-h-[85vh] flex-col">
           <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useRoute } from '../store/router';
 import { useStore } from '../store/Store';
 import { useDirtyForm } from '../store/dirty';
 import type { Milestone, WeightEntry, WeightUnit } from '../types';
@@ -131,7 +132,8 @@ export function WeightPage() {
   const unit = data.settings.weightUnit;
   const g = data.settings.weightGoal;
   const [goalOpen, setGoalOpen] = useState(false);
-  const [editing, setEditing] = useState<WeightEntry | null>(null);
+  const { params } = useRoute();
+  const [editing, setEditing] = useState<WeightEntry | null>(() => data.weights.find((w) => w.id === params.get('edit')) ?? null);
   const [del, setDel] = useState<WeightEntry | null>(null);
   const today = todayIn(tz);
   const p = weightProgress(data.weights, g.startKg, g.goalKg);
@@ -182,7 +184,7 @@ export function WeightPage() {
       </Card>
       <Card title={`Weight history (${sorted.length})`} icon="list" iconTone="slate">
         {sorted.length === 0 ? <Empty>No weight entries yet.</Empty> : (
-          <div className="overflow-x-auto rounded-lg ring-1 ring-slate-200">
+          <div tabIndex={0} className="overflow-x-auto rounded-lg ring-1 ring-slate-200">
             <table className="w-full text-left text-sm [&_td]:px-3 [&_td]:py-2.5 [&_th]:px-3 [&_th]:py-2.5">
               <thead><tr className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-500"><th className="p-2">Date</th><th className="p-2">Time</th><th className="p-2">Weight</th><th className="p-2">As entered</th><th className="p-2">7-day avg (days)</th><th className="p-2">Notes</th><th className="p-2"><span className="sr-only">Actions</span></th></tr></thead>
               <tbody>

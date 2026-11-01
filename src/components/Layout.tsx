@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useStore } from '../store/Store';
-import { useRoute } from '../store/router';
-import { cx, Button } from './ui';
+import { useRoute, onBlockedNavigation, confirmLeave, cancelLeave } from '../store/router';
+import { cx, Button, Modal } from './ui';
 import { Icon, Logo, type IconName } from './Icon';
 import { onUpdateAvailable, applyUpdate } from '../lib/pwa';
 import { hasUnsavedForm } from '../store/dirty';
@@ -75,6 +75,20 @@ function UpdateBanner() {
   );
 }
 
+/** Asks before leaving a page with unsaved changes. */
+function NavigationGuard() {
+  const [pending, setPending] = useState<string | null>(null);
+  useEffect(() => onBlockedNavigation(setPending), []);
+  return (
+    <Modal open={pending != null} onClose={cancelLeave} title="Leave without saving?" footer={<>
+      <Button variant="primary" onClick={cancelLeave}>Stay and keep editing</Button>
+      <Button variant="danger" onClick={confirmLeave}>Leave and discard</Button>
+    </>}>
+      <p>You have changes that haven’t been saved yet. If you leave this page now, they will be lost.</p>
+    </Modal>
+  );
+}
+
 function NavLink({ item, path, compact }: { item: NavItem; path: string; compact?: boolean }) {
   const active = isActive(item.href, path);
   return (
@@ -121,7 +135,7 @@ export function Layout({ children }: { children: ReactNode }) {
   }, [path]);
 
   return (
-    <div className="min-h-screen bg-[#f5f7f9] text-slate-900">
+    <div className="min-h-screen bg-[var(--app-bg)] text-slate-900">
       <a href="#main" onClick={(e) => { e.preventDefault(); mainRef.current?.focus(); }} className="sr-only focus:not-sr-only focus:fixed focus:left-2 focus:top-2 focus:z-50 focus:rounded focus:bg-white focus:p-3">
         Skip to content
       </a>
@@ -138,6 +152,7 @@ export function Layout({ children }: { children: ReactNode }) {
         </Strip>
       )}
       <UpdateBanner />
+      <NavigationGuard />
       <div className="mx-auto flex max-w-[84rem]">
         <nav aria-label="Main" className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col overflow-y-auto border-r border-slate-200 bg-white py-5 md:flex print:hidden">
           <a href="#/" className="mb-6 flex items-center gap-3 px-5 no-underline">
@@ -150,7 +165,7 @@ export function Layout({ children }: { children: ReactNode }) {
           <div className="flex flex-col gap-5 px-3">
             {NAV_GROUPS.map((g) => (
               <div key={g.title}>
-                <p className="mb-1 px-3 text-[0.7rem] font-semibold uppercase tracking-wider text-slate-400">{g.title}</p>
+                <p className="mb-1 px-3 text-[0.7rem] font-semibold uppercase tracking-wider text-slate-500">{g.title}</p>
                 <div className="flex flex-col gap-0.5">{g.items.map((n) => <NavLink key={n.href} item={n} path={path} />)}</div>
               </div>
             ))}
@@ -174,7 +189,7 @@ export function Layout({ children }: { children: ReactNode }) {
           <div id="more-menu" className="max-h-[65vh] overflow-y-auto border-b border-slate-200 px-3 py-3">
             {NAV_GROUPS.map((g) => (
               <div key={g.title} className="mb-2">
-                <p className="px-3 pb-1 text-[0.7rem] font-semibold uppercase tracking-wider text-slate-400">{g.title}</p>
+                <p className="px-3 pb-1 text-[0.7rem] font-semibold uppercase tracking-wider text-slate-500">{g.title}</p>
                 {g.items.map((n) => <NavLink key={n.href} item={n} path={path} compact />)}
               </div>
             ))}

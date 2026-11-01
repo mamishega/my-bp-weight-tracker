@@ -20,11 +20,20 @@ function SourceLinks({ keys }: { keys: (keyof typeof SOURCES)[] }) {
   );
 }
 
+export function guidanceOverdue(today = new Date().toISOString().slice(0, 10)): boolean {
+  return today > GUIDANCE_REVIEW_DUE;
+}
+
 export function ReviewDate() {
   return (
-    <p className="mt-2 text-xs text-slate-600">
-      Sources checked {formatDateLong(GUIDANCE_CHECKED_ON)}. Due for review by {formatDateLong(GUIDANCE_REVIEW_DUE)}.
-    </p>
+    <div className="mt-2 text-xs text-slate-600">
+      <p>Sources checked {formatDateLong(GUIDANCE_CHECKED_ON)}. Due for review by {formatDateLong(GUIDANCE_REVIEW_DUE)}.</p>
+      {guidanceOverdue() && (
+        <p className="mt-1 flex items-start gap-1.5 font-semibold text-amber-800" role="note">
+          <Icon name="alert" className="mt-0.5 h-3.5 w-3.5" /> This guidance is past its review date. Check the linked sources for any updates.
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -91,7 +100,7 @@ export function PrivacySummary() {
     <ul className="list-disc space-y-1 pl-5 text-sm text-slate-700">
       <li>Your records are stored only in this browser on this device, using IndexedDB. No account is needed.</li>
       <li>Records do <strong>not</strong> sync between devices or browsers. Clearing browser or site data can permanently delete them, so make regular backups.</li>
-      <li>Browser storage in this app is <strong>not encrypted</strong> by the app. Anyone who can use this browser profile could view the records.</li>
+      <li>Records are <strong>not encrypted</strong> unless you turn on the optional <strong>passcode lock</strong> below. Without it, anyone who can use this browser profile could view them. Even with it, someone with access while the app is unlocked could see them.</li>
       <li>No health information is sent to analytics, advertising, AI services or any other third party. The app makes no network requests with your data.</li>
       <li>Exported backups, CSV files and printed reports contain sensitive personal health information. Store and share them carefully.</li>
     </ul>

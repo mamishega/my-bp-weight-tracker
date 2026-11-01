@@ -26,6 +26,11 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
+      - name: Accessibility check in a real browser (axe-core, light + dark, desktop + mobile)
+        run: |
+          npx vite preview --port 4173 --strictPort &
+          for i in $(seq 1 30); do curl -sf http://localhost:4173/ >/dev/null && break; sleep 1; done
+          npm run check:a11y
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
