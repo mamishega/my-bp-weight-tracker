@@ -9,6 +9,7 @@ import { readFileText, saveFile } from '../lib/files';
 import { buildIcs, reminderEvents } from '../lib/ics';
 import { Icon } from '../components/Icon';
 import { emptyData, uid } from '../lib/defaults';
+import { deleteShare } from '../lib/share';
 import { isValidTimeZone, listTimeZones, formatDateShort, localDateOf, formatTime } from '../lib/time';
 import { requestPersistence } from '../db/db';
 import { cryptoAvailable, passcodeProblem } from '../lib/crypto';
@@ -285,10 +286,19 @@ function StorageCard() {
     navigator.storage?.estimate?.().then((e) => e.usage != null && setUsage(`${(e.usage / 1024).toFixed(0)} KB used`)).catch(() => {});
   }, []);
   const deleteAll = async () => {
+    // Turn off the doctor's live link too, so no copy of the data stays online.
+    let linkNote = '';
+    if (data.settings.share) {
+      try {
+        await deleteShare(data.settings.share);
+      } catch {
+        linkNote = ' The doctor share link could not be turned off (no connection); it stops updating and expires on its own.';
+      }
+    }
     const fresh = emptyData();
     await replaceAll({ ...fresh, settings: { ...fresh.settings, timeZone: data.settings.timeZone } });
     setDel(false);
-    toast('All data on this device has been deleted.', 'info');
+    toast(`All data on this device has been deleted.${linkNote}`, 'info');
   };
   return (
     <Card title="Privacy and storage" icon="shield" iconTone="slate">

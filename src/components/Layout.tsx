@@ -23,6 +23,7 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
     { href: '#/trends', label: 'Trends & Weekly Review', short: 'Trends', icon: 'chart', primary: true },
     { href: '#/history', label: 'History & Reports', short: 'History', icon: 'file' },
     { href: '#/appointments', label: 'Appointments', short: 'Visits', icon: 'calendar' },
+    { href: '#/share', label: 'Share with my doctor', short: 'Share', icon: 'link' },
   ] },
   { title: 'Manage', items: [{ href: '#/settings', label: 'Settings & Backups', short: 'Settings', icon: 'sliders' }] },
 ];

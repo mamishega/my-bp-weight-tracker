@@ -217,12 +217,13 @@ export function applyMerge(current: AppData, backup: BackupFile, plan: ImportPla
     }
     (out as unknown as Record<string, unknown>)[sp.name] = list;
   }
-  if (opts.settings === 'use_backup') out.settings = backup.data.settings;
+  // The live share link on this device keeps working whichever settings are chosen.
+  if (opts.settings === 'use_backup') out.settings = { ...backup.data.settings, share: current.settings.share ?? backup.data.settings.share ?? null };
   out.meta = current.meta;
   return out;
 }
 
 /** Replace: the backup becomes the full dataset (backup indicator kept from current device). */
 export function applyReplace(current: AppData, backup: BackupFile): AppData {
-  return { ...backup.data, meta: { ...backup.data.meta, lastBackupAt: current.meta.lastBackupAt, lastBackupMethod: current.meta.lastBackupMethod } };
+  return { ...backup.data, settings: { ...backup.data.settings, share: current.settings.share ?? backup.data.settings.share ?? null }, meta: { ...backup.data.meta, lastBackupAt: current.meta.lastBackupAt, lastBackupMethod: current.meta.lastBackupMethod } };
 }

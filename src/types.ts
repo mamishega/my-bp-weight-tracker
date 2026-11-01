@@ -281,7 +281,35 @@ export interface Settings {
   reminders: ReminderSettings;
   notificationsEnabled: boolean;
   onboarded: boolean;
+  /** Live doctor share link, if one is active. */
+  share: ShareConfig | null;
   updatedAt: ISOInstant;
+}
+
+/** What the doctor's live link includes. */
+export interface ShareOptions {
+  /** Rolling window: the last N days up to the latest update. */
+  windowDays: number;
+  /** Name shown at the top of the doctor's view (optional). */
+  displayName: string;
+  sessionNotes: boolean;
+  symptoms: boolean;
+  lifestyle: boolean;
+  doseNotes: boolean;
+  questions: boolean;
+  quality: boolean;
+  weightNotes: boolean;
+}
+
+export interface ShareConfig {
+  id: string;
+  /** Secret that lets this device update or delete the link. */
+  token: string;
+  /** Encryption key; also in the link's #fragment. */
+  key: string;
+  createdAt: ISOInstant;
+  expiresAt: ISOInstant;
+  options: ShareOptions;
 }
 
 export interface Meta {

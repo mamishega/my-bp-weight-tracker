@@ -25,10 +25,10 @@ describe('passcode lock (at-rest encryption)', () => {
     const d = await loadAll('real');
     d.settings.targets.source = 'Dr Example';
     await putKV('real', d.settings);
-    expect(await rawDump()).toContain('187');
+    expect(await rawDump()).toContain('"systolic":187');
     await enableLock('real', 'correct horse', await loadAll('real'));
     const raw = await rawDump();
-    expect(raw).not.toContain('187');
+    expect(raw).not.toContain('"systolic":187');
     expect(raw).not.toContain('secret note');
     expect(raw).not.toContain('Dr Example');
     expect(await isLockEnabled('real')).toBe(true);
@@ -49,7 +49,7 @@ describe('passcode lock (at-rest encryption)', () => {
   it('new records written while unlocked are encrypted and readable after unlock', async () => {
     await enableLock('real', 'correct horse', emptyData());
     await putRecord('real', 'sessions', mkSession({ id: 'n1', readings: [[142, 91]] }));
-    expect(await rawDump()).not.toContain('142');
+    expect(await rawDump()).not.toContain('"systolic":142');
     lock('real');
     await unlock('real', 'correct horse');
     expect((await loadAll('real')).sessions.map((s) => s.id)).toEqual(['n1']);

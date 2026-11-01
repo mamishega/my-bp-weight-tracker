@@ -20,11 +20,14 @@ npm run preview    # serve the production build at http://localhost:4173
 npm run icons      # regenerate PNG app icons (already committed in public/icons)
 npm run theme      # regenerate src/theme-dark.css from the Tailwind palette
 npm run check:a11y # real-browser accessibility check (needs `npm run preview` running and Chrome)
+npm run share:dev  # local share relay on http://localhost:8787 (for the doctor link)
+npm run check:share # end-to-end doctor-link check in Chrome (see "Doctor share link")
+npm run share:deploy # deploy the share relay to Cloudflare (see "Doctor share link")
 ```
 
 ### Deploying
 
-`dist/` is a static site with relative paths, so it can be hosted from any HTTPS static host or sub-folder (Netlify, GitHub Pages, Cloudflare Pages, or your own server). **The service worker, installability and offline use need HTTPS** (or `localhost`). The app makes no network requests apart from loading its own files. It has no server, accounts or analytics. A Content-Security-Policy in `index.html` restricts connections to the app's own origin.
+`dist/` is a static site with relative paths, so it can be hosted from any HTTPS static host or sub-folder (Netlify, GitHub Pages, Cloudflare Pages, or your own server). **The service worker, installability and offline use need HTTPS** (or `localhost`). The app has no accounts or analytics. It makes no network requests apart from loading its own files, unless you turn on the optional doctor share link (below). A Content-Security-Policy in `index.html` restricts connections to the app's own origin, plus the share relay's origin when one is configured at build time.
 
 ### Install on a phone
 
@@ -46,6 +49,7 @@ On some platforms (notably iOS) the installed app and the browser keep **separat
 | Trends & Weekly Review | 7/30/90-day and custom ranges. Systolic, diastolic and weight charts on a shared date axis, with colours, symbols and labels per session type. Separate summary statistics per session type with sample counts. Before/after **observed differences**, medication recording history, lifestyle context, table alternative. Weekly review. |
 | History & Reports | Editable history filtered by date, record type and session type, plus a data-quality filter. CSV exports. Report builder with optional-content checkboxes → printable preview → *Print / Save as PDF*. |
 | Appointments | Upcoming/past appointments, questions for your doctor (mark as discussed), *Prepare report*. |
+| Share with my doctor | One private, read-only **live link** for your doctor. It always shows your latest records: choose the time window (last 30–365 days), optional content and a name to show. Copy or share the link, preview it, see when it last updated, and turn it off or replace it. |
 | Settings & Backups | JSON backup, validated restore with preview and merge/replace, time zone, units, personal targets from your clinician, monitors/cuffs, reminders and notifications, privacy and storage, demo mode, delete all data, install instructions. |
 
 ## Design decisions on health and safety
@@ -100,16 +104,50 @@ In-app reminders (morning before-med, medication, after-medication timed from th
 
 **Reminders while the app is closed:** *Settings → Reminders → Add reminders to my calendar (.ics)* exports your fixed-time reminders (morning reading, medication, evening, weight days) as repeating calendar events with alerts. Your phone's calendar then alerts you reliably even when the app is closed. Event titles are generic (no medication names or readings), because calendars often sync online. Reminders that depend on your records (after-medication timing, refills, backups, appointments) stay in-app. True push notifications from a closed web app would need **extra infrastructure** (a Web Push server, and on iOS an installed home-screen app). That is not implemented.
 
+## Doctor share link (optional, needs a small server)
+
+A shared link that **updates when you add records** can't work from a local-only app. Something online has to hold the latest copy. This is kept as small and private as possible:
+
+- **End-to-end encrypted.** The app builds a snapshot of only what you chose, then encrypts it on your device with a random AES-256-GCM key. The link's id is bound in as associated data. Only the ciphertext is uploaded. The key is in the link after the `#`, and browsers never send that part to any server, so the relay (and Cloudflare) can't read your records.
+- **Updates itself.** About 3 seconds after any change (at most once every 15 s), and when you come back online, the app re-encrypts and replaces the stored copy. Unchanged data isn't re-uploaded. The doctor's page checks for new data every minute and shows *Last updated by the patient …*. If you haven't opened the app for more than 3 days, it says newer readings may be missing.
+- **What's shared:** readings, medication records, weight (plus 6 earlier days so the 7-day average is right), personal targets and next appointment date/clinician. Notes, symptoms diary, lifestyle notes, questions and quality notes are only included if you tick them. The link never contains reminders, habits, supply counts, monitors, appointment notes or location, backup info, or the link's own secrets.
+- **Control:** links expire after 30–365 days (the expiry is never extended by updates). *Turn off sharing* deletes the stored copy immediately. *Replace with a new link* does the same and creates a fresh one. *Delete all data* also turns the link off. Sharing is unavailable in demo mode and pauses while the passcode lock is closed. The link's secrets live in your settings, so they are encrypted by the passcode lock and included in backups. Restoring a backup keeps the link that's active on this device.
+- **The doctor's view** (`#/shared/<id>?k=<key>`) is read-only and starts only the viewer. It never opens or creates app storage in the doctor's browser. It shows charts plus the same content as the printable report, lets the doctor switch between 7/14/30/90 days, and prints to PDF. It states clearly that the records aren't monitored.
+- **Not monitoring:** nobody is alerted to new readings. The urgent-symptom guidance is unchanged.
+
+### Setting up the relay (once, free Cloudflare account)
+
+The relay is `share-worker/worker.js`: a Cloudflare Worker with one KV namespace. It stores one encrypted blob per link, holds only a SHA-256 hash of each link's update token, accepts writes only from the origins in `ALLOWED_ORIGINS`, limits uploads to 2 MB and returns `Cache-Control: no-store`.
+
+```bash
+npx wrangler@4 login     # opens Cloudflare in your browser
+npm run share:deploy     # creates the KV namespace on first deploy and prints the URL,
+                         # e.g. https://bp-tracker-share.<your-subdomain>.workers.dev
+                         # (this deployment: https://bp-tracker-share.mohammedsherif07.workers.dev)
+```
+
+If your Wrangler version doesn't create the KV namespace automatically, run `npx wrangler@4 kv namespace create SHARES`, paste the printed `id` into `share-worker/wrangler.toml`, and deploy again.
+
+Then point the app at it:
+
+- **GitHub Pages:** repository *Settings → Secrets and variables → Actions → Variables → New variable* `SHARE_API_URL` = the worker URL (or `gh variable set SHARE_API_URL --body https://…workers.dev`). Then re-run the *Deploy to GitHub Pages* workflow.
+- **Cloudflare Pages / other hosts:** set the build environment variable `VITE_SHARE_API_URL` to the worker URL, and add the site's origin (e.g. `https://my-bp.pages.dev`) to `ALLOWED_ORIGINS` in `share-worker/wrangler.toml`, then `npm run share:deploy` again.
+- **Local:** `npm run share:dev`, then `VITE_SHARE_API_URL=http://localhost:8787 npm run dev`.
+
+Without `VITE_SHARE_API_URL` the app behaves exactly as before: it makes no outside connections, and the share page explains that sharing isn't set up.
+
+Limitations: the free KV tier allows 1,000 writes a day, which is far more than one patient's updates need. KV is eventually consistent, so a doctor in another region may see an update up to about a minute later. The relay has no per-IP rate limiting. Add a Cloudflare rate-limiting rule if the worker URL is ever abused.
+
 ## Appearance and accessibility
 
 - Light, dark, or match-device appearance (*Settings → General*). The dark theme is generated by mirroring the Tailwind palette (`scripts/gen-dark-theme.mjs`) and uses dark-tuned chart colours. Printing always uses the light theme.
 - Unsaved-changes guard: leaving a page with a half-filled form asks before discarding it.
 - `npm test` runs axe-core on every page with sample data. `npm run check:a11y` runs axe-core, including colour contrast, in real Chrome in light and dark mode at desktop and phone widths. Both run in the GitHub Actions workflow, and a violation stops the deploy.
-- Secondary pages and the chart library are loaded on demand (main bundle 302 KB, 94 KB gzipped). The service worker still precaches every chunk, so offline use is unchanged.
+- Secondary pages and the chart library are loaded on demand (main bundle 364 KB, 114 KB gzipped). The service worker still precaches every chunk, so offline use is unchanged.
 
 ## Testing
 
-`npm test` runs 177 tests (all passing). Main areas:
+`npm test` runs 200 tests (all passing). Main areas:
 
 | Area | File |
 |---|---|
@@ -123,7 +161,12 @@ In-app reminders (morning before-med, medication, after-medication timed from th
 | Calendar export: time zone, repeat rules, alarms, no health details | `src/test/ics.test.ts` |
 | axe-core on every page (plus a check that axe really detects violations) | `src/test/a11y.test.tsx`, `src/test/axe-sanity.test.tsx` |
 | Guidance review date and source links | `src/test/guidance.test.ts` |
+| Doctor share link: encryption and id binding, link format (key only in `#`), snapshot contents (window, opt-in notes, no secrets/reminders/monitors), same link shows edits, unchanged data not re-uploaded, offline status, turning off, backups keep the link | `src/test/share.test.ts` |
+| Share relay worker: create/read/update/delete, token required, origin checks, CORS, expiry, size and format limits | `src/test/share-worker.test.ts` |
+| Share page create/turn-off flow, "not set up" state, doctor view (read-only, axe), turned-off and wrong-key links | `src/test/share-ui.test.tsx` |
 
 These were also checked against the production build in headless Chrome (1 Nov 2026): service worker control, **offline reload + saving a reading offline + persistence after reload**, demo data not appearing in personal history, no requests to any host other than the app's own, no console errors, and mobile and print layouts.
+
+`npm run check:share` (with `npm run share:dev` and a build made with `VITE_SHARE_API_URL=http://localhost:8787`) runs the doctor link end to end in real Chrome. The patient creates a link, and a separate browser profile (the doctor) opens it and sees the data. It checks that the key never appears in any request and that the doctor's browser stores no app database. The patient then adds a reading and the same link shows it (about 11 s). Turning sharing off makes the link stop working. It also runs axe-core on the doctor view in light and dark at desktop and phone widths. All checks passed on 1 Nov 2026.
 
 Manual checks still worth doing on your own devices: installing to the home screen, notification permission behaviour per browser, and the save/confirm backup flow on iOS.

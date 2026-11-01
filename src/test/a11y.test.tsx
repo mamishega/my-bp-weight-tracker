@@ -10,7 +10,7 @@ import { buildDemoData } from '../lib/demo';
 HTMLDialogElement.prototype.showModal ??= function (this: HTMLDialogElement) { this.setAttribute('open', ''); };
 HTMLDialogElement.prototype.close ??= function (this: HTMLDialogElement) { this.removeAttribute('open'); };
 
-const ROUTES = ['#/', '#/add?type=morning_post', '#/medication', '#/weight', '#/symptoms', '#/symptoms?tab=lifestyle', '#/symptoms?tab=habits', '#/trends', '#/history', '#/report', '#/appointments', '#/settings'];
+const ROUTES = ['#/', '#/add?type=morning_post', '#/medication', '#/weight', '#/symptoms', '#/symptoms?tab=lifestyle', '#/symptoms?tab=habits', '#/trends', '#/history', '#/report', '#/appointments', '#/share', '#/settings'];
 
 beforeAll(async () => {
   await closeStore('demo');

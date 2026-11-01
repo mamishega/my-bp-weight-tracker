@@ -1,0 +1,12 @@
+# Cloudflare Worker that relays encrypted share links. See README → "Doctor share link".
+name = "bp-tracker-share"
+main = "worker.js"
+compatibility_date = "2026-10-01"
+
+[vars]
+# Origins allowed to create/update links (the app's own address). Comma-separated.
+ALLOWED_ORIGINS = "https://mamishega.github.io,http://localhost:5173,http://localhost:4173"
+
+[[kv_namespaces]]
+binding = "SHARES"
+id = "514075b3ec6644d0ba9db8db01071da1"

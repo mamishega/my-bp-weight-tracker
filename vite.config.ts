@@ -1,5 +1,5 @@
 /// <reference types="vitest/config" />
-import { defineConfig, type Plugin } from 'vite';
+import { defineConfig, loadEnv, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { readFileSync } from 'node:fs';
@@ -39,10 +39,34 @@ function serviceWorkerPlugin(): Plugin {
   };
 }
 
-export default defineConfig({
+/**
+ * The optional doctor-share relay (VITE_SHARE_API_URL) must be allowed by the
+ * Content-Security-Policy; nothing else beyond the app's own origin is.
+ */
+function shareOrigin(url: string | undefined): string | null {
+  if (!url) return null;
+  const u = new URL(url);
+  const local = ['localhost', '127.0.0.1'].includes(u.hostname);
+  if (u.protocol !== 'https:' && !(local && u.protocol === 'http:')) throw new Error('VITE_SHARE_API_URL must use https://');
+  return u.origin;
+}
+
+function cspPlugin(origin: string | null): Plugin {
+  return {
+    name: 'bpt-csp',
+    transformIndexHtml(html) {
+      return origin ? html.replace("connect-src 'self'", `connect-src 'self' ${origin}`) : html;
+    },
+  };
+}
+
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), 'VITE_');
+  const origin = shareOrigin(env.VITE_SHARE_API_URL || process.env.VITE_SHARE_API_URL);
+  return {
   base: './',
   define: { __BUILD_ID__: JSON.stringify(BUILD_ID) },
-  plugins: [react(), tailwindcss(), serviceWorkerPlugin()],
+  plugins: [react(), tailwindcss(), serviceWorkerPlugin(), cspPlugin(origin)],
   build: { chunkSizeWarningLimit: 1200 },
   test: {
     environment: 'jsdom',
@@ -50,4 +74,5 @@ export default defineConfig({
     setupFiles: ['./src/test/setup.ts'],
     env: { TZ: 'UTC' },
   },
+  };
 });

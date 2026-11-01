@@ -39,6 +39,7 @@ export function defaultSettings(now = new Date().toISOString()): Settings {
     },
     notificationsEnabled: false,
     onboarded: false,
+    share: null,
     updatedAt: now,
   };
 }
@@ -85,6 +86,7 @@ export function normaliseSettings(s: Partial<Settings> | undefined): Settings {
       appointment: { ...d.reminders.appointment, ...(s.reminders?.appointment ?? {}) },
     },
     monitors: s.monitors ?? [],
+    share: s.share ?? null,
     id: 'settings',
   };
 }

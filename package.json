@@ -12,7 +12,10 @@
     "typecheck": "tsc --noEmit",
     "icons": "node scripts/gen-icons.mjs",
     "check:a11y": "node scripts/check-a11y-browser.mjs",
-    "theme": "node scripts/gen-dark-theme.mjs"
+    "theme": "node scripts/gen-dark-theme.mjs",
+    "share:dev": "node scripts/share-dev-server.mjs",
+    "share:deploy": "npx wrangler@4 deploy --config share-worker/wrangler.toml",
+    "check:share": "node scripts/check-share-browser.mjs"
   },
   "dependencies": {
     "idb": "^8.0.4",
