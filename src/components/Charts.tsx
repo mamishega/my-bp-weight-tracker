@@ -26,7 +26,7 @@ function ticks(from: ISODate, to: ISODate): number[] {
 
 function Legend({ items }: { items: { label: string; color: string; symbol: string; dashed?: boolean }[] }) {
   return (
-    <ul className="mb-1 flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-800" aria-hidden="true">
+    <ul className="mb-2 flex flex-wrap gap-x-4 gap-y-1 text-xs font-medium text-slate-600" aria-hidden="true">
       {items.map((i) => (
         <li key={i.label} className="flex items-center gap-1">
           <span style={{ color: i.color }} className="text-base">{i.symbol}</span> {i.label}
@@ -69,10 +69,10 @@ export function BPChart({ sessions, measure, from, to, target, visible }: { sess
     }).join('. ') + '.';
   return (
     <figure>
-      <figcaption className="mb-1 font-semibold">{measure === 'systolic' ? 'Systolic (top number)' : 'Diastolic (bottom number)'} — mmHg, session averages</figcaption>
+      <figcaption className="mb-1 text-sm font-semibold text-slate-800">{measure === 'systolic' ? 'Systolic (top number)' : 'Diastolic (bottom number)'} — mmHg, session averages</figcaption>
       <Legend items={types.map((t) => ({ label: SESSION_LABEL[t], color: SESSION_STYLE[t].color, symbol: SESSION_STYLE[t].symbol }))} />
       {total === 0 ? (
-        <p className="rounded border border-dashed p-6 text-center text-slate-600">No readings in this period.</p>
+        <p className="rounded-lg border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">No readings in this period.</p>
       ) : (
         <div role="img" aria-label={desc} className="h-64 w-full">
           <ResponsiveContainer width="100%" height="100%">
@@ -103,10 +103,10 @@ export function WeightChart({ weights, from, to, unit, goalKg }: { weights: Weig
     : 'No weight measurements in this period.';
   return (
     <figure>
-      <figcaption className="mb-1 font-semibold">Weight — {unit}</figcaption>
+      <figcaption className="mb-1 text-sm font-semibold text-slate-800">Weight — {unit}</figcaption>
       <Legend items={[{ label: 'Daily weight', color: '#2a78d6', symbol: '●' }, { label: '7-day moving average (days with data only)', color: '#0d366b', symbol: '━' }]} />
       {ma.length === 0 ? (
-        <p className="rounded border border-dashed p-6 text-center text-slate-600">No weight measurements in this period.</p>
+        <p className="rounded-lg border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">No weight measurements in this period.</p>
       ) : (
         <div role="img" aria-label={desc} className="h-56 w-full">
           <ResponsiveContainer width="100%" height="100%">

@@ -81,8 +81,8 @@ function SymptomsTab() {
   const list = [...data.symptoms].sort((a, b) => b.occurredAt.localeCompare(a.occurredAt));
   return (
     <div className="grid gap-4 lg:grid-cols-2">
-      <Card title={edit ? 'Edit symptom' : 'Record a symptom'}><SymptomForm key={edit?.id ?? 'new'} existing={edit ?? undefined} onDone={() => setEdit(null)} /></Card>
-      <Card title={`Symptom diary (${list.length})`}>
+      <Card title={edit ? 'Edit symptom' : 'Record a symptom'} icon="clipboard"><SymptomForm key={edit?.id ?? 'new'} existing={edit ?? undefined} onDone={() => setEdit(null)} /></Card>
+      <Card title={`Symptom diary (${list.length})`} icon="list" iconTone="slate">
         {list.length === 0 ? <Empty>No symptoms recorded.</Empty> : (
           <ul className="space-y-3">
             {list.map((s) => (
@@ -113,12 +113,12 @@ function LifestyleTab() {
   const existing = data.dailyLogs.find((l) => l.date === date);
   return (
     <div className="flex flex-col gap-4">
-      <Card title="Daily context (all optional)">
+      <Card title="Daily context" subtitle="Every field is optional" icon="activity">
         <p className="mb-3 text-sm text-slate-600">These notes give context to your trends. They are never treated as the cause of a reading or weight change.</p>
         <TextField label="Day" type="date" value={date} onChange={(e) => isValidDate(e.target.value) && setDate(e.target.value)} />
         <LifestyleForm key={date + (existing?.updatedAt ?? '')} date={date} existing={existing} onSave={async (l) => { await put('dailyLogs', l); toast('Daily notes saved.'); }} onDelete={existing ? async () => { await remove('dailyLogs', existing.id); toast('Daily notes removed.', 'info'); } : undefined} />
       </Card>
-      <Card title="Recent daily notes">
+      <Card title="Recent daily notes" icon="list" iconTone="slate">
         {data.dailyLogs.length === 0 ? <Empty>No daily notes yet.</Empty> : (
           <ul className="space-y-2 text-sm">
             {[...data.dailyLogs].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 30).map((l) => (
@@ -218,7 +218,7 @@ function HabitsTab() {
   const suggestions = ['Walk for 20 minutes', 'Prepare a meal at home', 'Choose a lower-salt option', 'Wind down for bed on time', 'Have an alcohol-free day'];
   return (
     <div className="flex flex-col gap-4">
-      <Card title="Choose habit goals">
+      <Card title="Choose habit goals" icon="award" iconTone="green">
         <form className="flex flex-wrap items-end gap-2" onSubmit={(e) => { e.preventDefault(); void add(name); }}>
           <div className="min-w-60 flex-1"><TextField label="New habit" value={name} onChange={(e) => setName(e.target.value)} error={err} /></div>
           <Button type="submit" variant="primary">Add habit</Button>
@@ -228,7 +228,7 @@ function HabitsTab() {
         </div>
         <p className="mt-2 text-sm text-slate-600">Habits celebrate actions you complete — not blood pressure numbers or weight.</p>
       </Card>
-      <Card title="This week">
+      <Card title="This week" icon="calendar" iconTone="slate">
         {data.habits.length === 0 ? <Empty>No habits chosen yet.</Empty> : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -243,7 +243,7 @@ function HabitsTab() {
                         const c = data.habitChecks.some((x) => x.habitId === h.id && x.date === d);
                         return <td key={d} className="p-1 text-center"><input type="checkbox" className="h-5 w-5 accent-teal-700" aria-label={`${h.name} on ${formatDateShort(d)}`} checked={c} disabled={d > today} onChange={(e) => toggle(h.id, d, e.target.checked)} /></td>;
                       })}
-                      <td className="p-2 text-center">{done > 0 ? <span>🎉 {done}</span> : '—'}</td>
+                      <td className="p-2 text-center">{done > 0 ? <Badge tone="ok" icon="award">{done}</Badge> : '—'}</td>
                       <td className="p-2"><Button variant="ghost" onClick={() => put('habits', { ...h, active: !h.active, updatedAt: new Date().toISOString() })}>{h.active ? 'Pause' : 'Resume'}</Button></td>
                     </tr>
                   );
@@ -265,9 +265,9 @@ export function SymptomsLifestylePage() {
     <div className="flex flex-col gap-4">
       <PageTitle>Symptoms &amp; Lifestyle</PageTitle>
       <UrgentHelp />
-      <div role="tablist" aria-label="Section" className="flex flex-wrap gap-2">
+      <div role="tablist" aria-label="Section" className="inline-flex w-full flex-wrap gap-1 rounded-xl bg-slate-200/70 p-1 sm:w-auto">
         {tabs.map((t) => (
-          <button key={t.id} role="tab" type="button" aria-selected={tab === t.id} onClick={() => navigate(`/symptoms?tab=${t.id}`)} className={cx('min-h-11 rounded-lg border px-4 font-medium', tab === t.id ? 'border-teal-700 bg-teal-700 text-white' : 'border-slate-300 bg-white')}>{t.label}</button>
+          <button key={t.id} role="tab" type="button" aria-selected={tab === t.id} onClick={() => navigate(`/symptoms?tab=${t.id}`)} className={cx('min-h-10 flex-1 rounded-lg px-4 text-sm font-semibold transition-colors sm:flex-none', tab === t.id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900')}>{t.label}</button>
         ))}
       </div>
       <div role="tabpanel">{tab === 'symptoms' ? <SymptomsTab /> : tab === 'lifestyle' ? <LifestyleTab /> : <HabitsTab />}</div>

@@ -60,12 +60,12 @@ export function AppointmentsPage() {
   const card = (a: Appointment) => {
     const d = daysBetween(today, a.date);
     return (
-      <li key={a.id} className="rounded-lg border border-slate-200 p-3">
-        <p className="font-semibold">{formatDateLong(a.date)}{a.time && `, ${formatClock(a.time)}`} {d >= 0 && <Badge tone="info" icon="📅">{d === 0 ? 'Today' : d === 1 ? 'Tomorrow' : `In ${d} days`}</Badge>}</p>
+      <li key={a.id} className="rounded-xl border border-slate-200 p-4">
+        <p className="font-semibold">{formatDateLong(a.date)}{a.time && `, ${formatClock(a.time)}`} {d >= 0 && <Badge tone="info" icon="calendar">{d === 0 ? 'Today' : d === 1 ? 'Tomorrow' : `In ${d} days`}</Badge>}</p>
         <p>{[a.clinician, a.location, a.purpose].filter(Boolean).join(' · ')}</p>
         {a.notes && <p className="text-sm text-slate-700">{a.notes}</p>}
         <div className="mt-2 flex flex-wrap gap-2">
-          <LinkButton href={`#/report?from=${addDays(a.date < today ? a.date : today, -29)}&to=${a.date < today ? a.date : today}`} variant="primary">Prepare report</LinkButton>
+          <LinkButton icon="printer" href={`#/report?from=${addDays(a.date < today ? a.date : today, -29)}&to=${a.date < today ? a.date : today}`} variant="primary">Prepare report</LinkButton>
           <Button variant="ghost" onClick={() => setEdit(a)}>Edit</Button>
           <Button variant="ghost" onClick={() => setDel(a)}>Delete</Button>
         </div>
@@ -74,10 +74,9 @@ export function AppointmentsPage() {
   };
   return (
     <div className="flex flex-col gap-4">
-      <PageTitle sub="Plan for your next visit and keep questions in one place.">Appointments</PageTitle>
-      <div><Button variant="primary" onClick={() => setEdit('new')}>➕ Add appointment</Button></div>
-      <Card title="Upcoming">{upcoming.length === 0 ? <Empty>No upcoming appointments.</Empty> : <ul className="space-y-2">{upcoming.map(card)}</ul>}</Card>
-      <Card title="Questions for my doctor">
+      <PageTitle sub="Plan for your next visit and keep questions in one place." actions={<Button variant="primary" icon="plus" onClick={() => setEdit('new')}>Add appointment</Button>}>Appointments</PageTitle>
+      <Card title="Upcoming" icon="calendar">{upcoming.length === 0 ? <Empty>No upcoming appointments.</Empty> : <ul className="space-y-2">{upcoming.map(card)}</ul>}</Card>
+      <Card title="Questions for my doctor" subtitle="Tick a question once it has been discussed." icon="stethoscope">
         <form className="flex flex-wrap items-end gap-2" onSubmit={(e) => { e.preventDefault(); void addQ(); }}>
           <div className="min-w-60 flex-1"><TextField label="Question or note" value={q} onChange={(e) => setQ(e.target.value)} /></div>
           <div className="w-56"><SelectField label="For appointment" optional value={qAppt} onChange={(e) => setQAppt(e.target.value)}><option value="">Any</option>{upcoming.map((a) => <option key={a.id} value={a.id}>{a.date} {a.clinician}</option>)}</SelectField></div>
@@ -96,7 +95,7 @@ export function AppointmentsPage() {
           </ul>
         )}
       </Card>
-      {past.length > 0 && <Card title="Past appointments"><ul className="space-y-2">{past.map(card)}</ul></Card>}
+      {past.length > 0 && <Card title="Past appointments" icon="clock" iconTone="slate"><ul className="space-y-2">{past.map(card)}</ul></Card>}
       {edit && <ApptForm existing={edit === 'new' ? undefined : edit} onClose={() => setEdit(null)} />}
       <Modal open={!!del} onClose={() => setDel(null)} title="Delete appointment?" footer={<><Button onClick={() => setDel(null)}>Keep</Button><Button variant="danger" onClick={async () => { await remove('appointments', del!.id); setDel(null); }}>Delete</Button></>}><p>{del && formatDateLong(del.date)}</p></Modal>
     </div>

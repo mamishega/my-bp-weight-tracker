@@ -147,10 +147,10 @@ export function WeightPage() {
     <div className="flex flex-col gap-4">
       <PageTitle sub="Weigh in whenever suits you — there is no need to weigh daily. Similar conditions each time (same scales, time of day, clothing) make trends easier to read.">Weight</PageTitle>
       <div className="grid gap-4 lg:grid-cols-2">
-        <Card title={editing ? 'Edit weight' : 'Record weight'}>
+        <Card title={editing ? 'Edit weight' : 'Record weight'} icon="weight" iconTone="violet">
           <WeightForm key={editing?.id ?? 'new'} existing={editing ?? undefined} onDone={() => setEditing(null)} />
         </Card>
-        <Card title="Progress" actions={<Button variant="ghost" onClick={() => setGoalOpen(true)}>{g.goalKg == null ? 'Set goal' : 'Edit goal'}</Button>}>
+        <Card title="Progress" icon="chart" iconTone="violet" actions={<Button variant="ghost" icon="pencil" onClick={() => setGoalOpen(true)}>{g.goalKg == null ? 'Set goal' : 'Edit goal'}</Button>}>
           <div className="grid grid-cols-2 gap-4">
             <Stat label="Starting" value={fmtWeight(g.startKg, unit)} sub={g.startDate ? formatDateShort(g.startDate) : 'Not set'} />
             <Stat label="Current" value={fmtWeight(p.currentKg, unit)} sub={p.currentDate ? formatDateShort(p.currentDate) : 'No entries yet'} />
@@ -165,7 +165,7 @@ export function WeightPage() {
               <ul className="mt-1 space-y-1">
                 {g.milestones.map((m) => (
                   <li key={m.id} className="flex flex-wrap items-center gap-2">
-                    {m.achievedOn ? <Badge tone="ok">Reached {formatDateShort(m.achievedOn)}</Badge> : <Badge icon="○">Not yet</Badge>}
+                    {m.achievedOn ? <Badge tone="ok">Reached {formatDateShort(m.achievedOn)}</Badge> : <Badge>Not yet</Badge>}
                     {m.label}{m.kg != null && ` (${fmtWeight(m.kg, unit)})`}
                     <Button variant="ghost" onClick={() => toggleMilestone(m)}>{m.achievedOn ? 'Undo' : 'Mark reached'}</Button>
                   </li>
@@ -176,15 +176,15 @@ export function WeightPage() {
           <p className="mt-3 text-xs text-slate-600">This app doesn’t suggest calorie intakes, rates of weight loss or treatment changes. Talk with your healthcare professional about your plan.</p>
         </Card>
       </div>
-      <Card title="Last 90 days">
+      <Card title="Last 90 days" icon="chart" iconTone="violet">
         <WeightChart weights={data.weights} from={addDays(today, -89)} to={today} unit={unit} goalKg={g.goalKg} />
         <p className="mt-2 text-sm text-slate-600">The 7-day moving average for each day uses only days with a measurement in the previous 7 days. Missing days are never counted as zero.</p>
       </Card>
-      <Card title={`Weight history (${sorted.length})`}>
+      <Card title={`Weight history (${sorted.length})`} icon="list" iconTone="slate">
         {sorted.length === 0 ? <Empty>No weight entries yet.</Empty> : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead><tr className="border-b"><th className="p-2">Date</th><th className="p-2">Time</th><th className="p-2">Weight</th><th className="p-2">As entered</th><th className="p-2">7-day avg (days)</th><th className="p-2">Notes</th><th className="p-2"><span className="sr-only">Actions</span></th></tr></thead>
+          <div className="overflow-x-auto rounded-lg ring-1 ring-slate-200">
+            <table className="w-full text-left text-sm [&_td]:px-3 [&_td]:py-2.5 [&_th]:px-3 [&_th]:py-2.5">
+              <thead><tr className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-500"><th className="p-2">Date</th><th className="p-2">Time</th><th className="p-2">Weight</th><th className="p-2">As entered</th><th className="p-2">7-day avg (days)</th><th className="p-2">Notes</th><th className="p-2"><span className="sr-only">Actions</span></th></tr></thead>
               <tbody>
                 {sorted.map((w) => {
                   const m = ma.find((x) => x.date === w.date);

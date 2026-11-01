@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useStore } from '../store/Store';
 import type { SessionType } from '../types';
 import { Badge, Button, Card, Checkbox, Empty, LinkButton, Modal, Notice, PageTitle, SelectField, TextField, useToast } from '../components/ui';
-import { SESSION_LABEL, SESSION_STYLE, fmt, fmtBP, sessionAverage } from '../lib/bp';
+import { SESSION_LABEL, fmt, fmtBP, sessionAverage } from '../lib/bp';
 import { addDays, formatDateShort, formatTime, isValidDate, todayIn } from '../lib/time';
 import { FLAG_IS_WARNING, QUALITY_LABEL, findDuplicateDoses, findDuplicateSessions, findDuplicateSymptoms, findDuplicateWeights, sessionFlags } from '../lib/quality';
 import { fmtWeight } from '../lib/weight';
@@ -45,9 +45,9 @@ export function HistoryPage() {
       const t = s.sessionType === 'morning_post' ? doseTiming(s, dose) : null;
       rows.push({
         key: s.id, sortAt: s.measuredAt, date: s.date, kind: 'bp',
-        title: `${SESSION_STYLE[s.sessionType].symbol} ${SESSION_LABEL[s.sessionType]}`,
+        title: SESSION_LABEL[s.sessionType],
         detail: <><span className="font-semibold tabular-nums">{s.readings.map((r) => `${r.systolic}/${r.diastolic}${r.pulse ? ` (${r.pulse})` : ''}`).join(', ')}</span> → avg {fmtBP(a.systolic, a.diastolic)}{a.pulse != null && `, pulse ${fmt(a.pulse)}`} · {formatTime(s.measuredAt, s.timeZone, tz)}{t?.kind === 'ok' && ` · ${formatDuration(t.minutes)} after dose`}{s.notes && <span className="block text-slate-600">{s.notes}</span>}</>,
-        flags: <>{f.map((x) => <Badge key={x} tone={FLAG_IS_WARNING[x] ? 'warn' : 'neutral'} icon={FLAG_IS_WARNING[x] ? '⚠️' : 'ℹ️'}>{QUALITY_LABEL[x]}</Badge>)}</>,
+        flags: <>{f.map((x) => <Badge key={x} tone={FLAG_IS_WARNING[x] ? 'warn' : 'neutral'} icon={FLAG_IS_WARNING[x] ? 'alert' : 'info'}>{QUALITY_LABEL[x]}</Badge>)}</>,
         edit: `#/add?id=${s.id}`,
         onDelete: () => remove('sessions', s.id),
       });
@@ -58,19 +58,19 @@ export function HistoryPage() {
       if (!inRange(d.date)) continue;
       const issues = d.status === 'taken' && !d.takenAt;
       if (onlyIssues && !issues && !dDupes.has(d.id)) continue;
-      rows.push({ key: d.id, sortAt: d.takenAt ?? `${d.date}T00:00`, date: d.date, kind: 'dose', title: `💊 ${d.nameSnapshot} ${d.doseSnapshot}`, detail: <>{d.status === 'taken' ? '✔ Taken' : '⤼ Skipped'}{d.takenAt && ` at ${formatTime(d.takenAt, d.timeZone, tz)}`}{d.notes && <span className="block text-slate-600">{d.notes}</span>}</>, flags: <>{issues && <Badge tone="warn">Medication time unknown</Badge>}{dDupes.has(d.id) && <Badge tone="warn">Possible duplicate</Badge>}</>, edit: '#/medication', onDelete: () => remove('doses', d.id) });
+      rows.push({ key: d.id, sortAt: d.takenAt ?? `${d.date}T00:00`, date: d.date, kind: 'dose', title: `${d.nameSnapshot} ${d.doseSnapshot}`, detail: <>{d.status === 'taken' ? 'Taken' : 'Skipped'}{d.takenAt && ` at ${formatTime(d.takenAt, d.timeZone, tz)}`}{d.notes && <span className="block text-slate-600">{d.notes}</span>}</>, flags: <>{issues && <Badge tone="warn">Medication time unknown</Badge>}{dDupes.has(d.id) && <Badge tone="warn">Possible duplicate</Badge>}</>, edit: '#/medication', onDelete: () => remove('doses', d.id) });
     }
   }
   if ((kind === 'all' && stype === 'all') || kind === 'weight') {
     for (const w of data.weights) {
       if (!inRange(w.date) || (onlyIssues && !wDupes.has(w.id))) continue;
-      rows.push({ key: w.id, sortAt: w.measuredAt ?? `${w.date}T00:00`, date: w.date, kind: 'weight', title: '⚖️ Weight', detail: <>{fmtWeight(w.kg, data.settings.weightUnit)} (entered {w.enteredValue} {w.enteredUnit}){w.measuredAt && ` · ${formatTime(w.measuredAt, w.timeZone, tz)}`}{w.notes && <span className="block text-slate-600">{w.notes}</span>}</>, flags: wDupes.has(w.id) ? <Badge tone="warn">Possible duplicate</Badge> : null, edit: '#/weight', onDelete: () => remove('weights', w.id) });
+      rows.push({ key: w.id, sortAt: w.measuredAt ?? `${w.date}T00:00`, date: w.date, kind: 'weight', title: 'Weight', detail: <>{fmtWeight(w.kg, data.settings.weightUnit)} (entered {w.enteredValue} {w.enteredUnit}){w.measuredAt && ` · ${formatTime(w.measuredAt, w.timeZone, tz)}`}{w.notes && <span className="block text-slate-600">{w.notes}</span>}</>, flags: wDupes.has(w.id) ? <Badge tone="warn">Possible duplicate</Badge> : null, edit: '#/weight', onDelete: () => remove('weights', w.id) });
     }
   }
   if ((kind === 'all' && stype === 'all') || kind === 'symptom') {
     for (const s of data.symptoms) {
       if (!inRange(s.date) || (onlyIssues && !syDupes.has(s.id))) continue;
-      rows.push({ key: s.id, sortAt: s.occurredAt, date: s.date, kind: 'symptom', title: '📝 Symptom', detail: <>{s.description}{s.severity && ` · ${s.severity}`} · {formatTime(s.occurredAt, s.timeZone, tz)}</>, flags: syDupes.has(s.id) ? <Badge tone="warn">Possible duplicate</Badge> : null, edit: '#/symptoms', onDelete: () => remove('symptoms', s.id) });
+      rows.push({ key: s.id, sortAt: s.occurredAt, date: s.date, kind: 'symptom', title: 'Symptom', detail: <>{s.description}{s.severity && ` · ${s.severity}`} · {formatTime(s.occurredAt, s.timeZone, tz)}</>, flags: syDupes.has(s.id) ? <Badge tone="warn">Possible duplicate</Badge> : null, edit: '#/symptoms', onDelete: () => remove('symptoms', s.id) });
     }
   }
   rows.sort((a, b) => b.date.localeCompare(a.date) || b.sortAt.localeCompare(a.sortAt));
@@ -88,7 +88,7 @@ export function HistoryPage() {
   return (
     <div className="flex flex-col gap-4">
       <PageTitle sub="Every original record, with data-quality notes. Nothing is deleted automatically.">History &amp; Reports</PageTitle>
-      <Card title="Filter">
+      <Card title="Filter records" icon="sliders" iconTone="slate">
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <TextField label="From" type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
           <TextField label="To" type="date" value={to} onChange={(e) => setTo(e.target.value)} />
@@ -102,11 +102,11 @@ export function HistoryPage() {
         </div>
         <div className="mt-3"><Checkbox label="Only show records with data-quality warnings" checked={onlyIssues} onChange={setOnlyIssues} hint="Possible duplicates, missing medication times, timing to review, unusual conditions." /></div>
       </Card>
-      <Card title={`Records (${rows.length})`}>
+      <Card title={`Records (${rows.length})`} icon="list" iconTone="slate">
         {rows.length === 0 ? <Empty>No records match these filters.</Empty> : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead><tr className="border-b"><th className="p-2" scope="col">Day</th><th className="p-2" scope="col">Record</th><th className="p-2" scope="col">Details</th><th className="p-2" scope="col">Data quality</th><th className="p-2" scope="col"><span className="sr-only">Actions</span></th></tr></thead>
+          <div className="overflow-x-auto rounded-lg ring-1 ring-slate-200">
+            <table className="w-full text-left text-sm [&_td]:px-3 [&_td]:py-2.5 [&_th]:px-3 [&_th]:py-2.5">
+              <thead><tr className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-500"><th className="p-2" scope="col">Day</th><th className="p-2" scope="col">Record</th><th className="p-2" scope="col">Details</th><th className="p-2" scope="col">Data quality</th><th className="p-2" scope="col"><span className="sr-only">Actions</span></th></tr></thead>
               <tbody>
                 {rows.map((r) => (
                   <tr key={r.key} className="border-b border-slate-100 align-top">
@@ -123,7 +123,7 @@ export function HistoryPage() {
         )}
       </Card>
 
-      <Card title="Appointment report">
+      <Card title="Appointment report" subtitle="Preview, then print or save as PDF." icon="printer">
         <p className="mb-2">Prepare a printable summary for the dates above ({isValidDate(from) ? formatDateShort(from) : '—'} – {isValidDate(to) ? formatDateShort(to) : '—'}). You can preview it before printing or saving as PDF.</p>
         <fieldset className="grid gap-2 sm:grid-cols-2">
           <legend className="mb-1 font-medium">Optional content to include</legend>
@@ -135,11 +135,11 @@ export function HistoryPage() {
           <Checkbox label="My questions for the doctor" checked={reportOpts.questions} onChange={(v) => setReportOpts({ ...reportOpts, questions: v })} />
           <Checkbox label="Missing data and measurement quality notes" checked={reportOpts.quality} onChange={(v) => setReportOpts({ ...reportOpts, quality: v })} />
         </fieldset>
-        <div className="mt-3"><LinkButton href={`#/report?${q.toString()}`} variant="primary">Preview report</LinkButton></div>
+        <div className="mt-3"><LinkButton href={`#/report?${q.toString()}`} variant="primary" icon="file">Preview report</LinkButton></div>
         <p className="mt-2 text-sm text-slate-600">Reports are never sent anywhere automatically. You decide whether to print, save or share them.</p>
       </Card>
 
-      <Card title="CSV export">
+      <Card title="CSV export" subtitle="Spreadsheet files of your original records." icon="download" iconTone="slate">
         <p className="mb-2 text-sm">Spreadsheet files of your original records (all dates). CSV files are not backups — use the JSON backup in Settings to be able to restore.</p>
         <div className="flex flex-wrap gap-2">
           <Button onClick={() => exportCsv('bp-readings', readingsCsv(data))}>Blood pressure readings</Button>

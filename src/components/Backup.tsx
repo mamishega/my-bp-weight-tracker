@@ -59,8 +59,8 @@ export function BackupNowButton({ variant = 'primary' }: { variant?: 'primary' |
 
   return (
     <>
-      <Button variant={variant} onClick={run} disabled={busy}>
-        <span aria-hidden="true">💾</span> {busy ? 'Preparing…' : 'Back up now'}
+      <Button variant={variant} onClick={run} disabled={busy} icon="download">
+        {busy ? 'Preparing…' : 'Back up now'}
       </Button>
       <Modal
         open={!!confirming}

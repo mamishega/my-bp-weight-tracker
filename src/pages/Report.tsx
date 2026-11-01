@@ -2,6 +2,7 @@ import { useStore } from '../store/Store';
 import { useRoute } from '../store/router';
 import type { SessionType } from '../types';
 import { Button, Notice } from '../components/ui';
+import { Logo } from '../components/Icon';
 import { StatsTable } from './Trends';
 import { SESSION_LABEL, CONDITION_LABEL, fmt, fmtBP, prePostComparison, sessionAverage } from '../lib/bp';
 import { addDays, dateRange, formatClock, formatDateLong, formatDateShort, formatDuration, formatOffset, formatTime, isValidDate, localDateOf, todayIn } from '../lib/time';
@@ -45,15 +46,16 @@ export function ReportPage() {
   const countFlag = (k: keyof typeof QUALITY_LABEL) => allFlags.filter((x) => x.f.includes(k)).length;
 
   return (
-    <div className="mx-auto max-w-4xl bg-white p-4 text-slate-900 print:p-0">
+    <div className="mx-auto max-w-4xl rounded-xl border border-slate-200 bg-white p-6 text-slate-900 shadow-sm sm:p-10 print:rounded-none print:border-0 print:p-0 print:shadow-none">
       <div className="mb-4 flex flex-wrap gap-2 print:hidden">
-        <Button variant="primary" onClick={() => window.print()}>🖨️ Print / Save as PDF</Button>
-        <Button onClick={() => history.back()}>Back to options</Button>
+        <Button variant="primary" icon="printer" onClick={() => window.print()}>Print / Save as PDF</Button>
+        <Button icon="chevronLeft" onClick={() => history.back()}>Back to options</Button>
         <p className="w-full text-sm text-slate-600">In the print dialog, choose “Save as PDF” to create a PDF. Nothing is sent anywhere.</p>
       </div>
       {mode === 'demo' && <Notice tone="demo" title="DEMO REPORT — SAMPLE DATA, NOT REAL HEALTH RECORDS" />}
-      <header>
-        <h1 className="text-2xl font-bold">Blood pressure &amp; weight summary</h1>
+      <header className="border-b-2 border-slate-900 pb-3">
+        <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-600"><Logo className="h-7 w-7" /> My BP &amp; Weight Tracker</div>
+        <h1 className="text-2xl font-bold tracking-tight">Blood pressure &amp; weight summary</h1>
         <p>Period: <strong>{formatDateLong(from)} – {formatDateLong(to)}</strong></p>
         <p className="text-sm">Prepared {formatDateLong(today)} · Times shown in {tz} unless noted · Name: ______________________</p>
         {nextAppt && <p className="text-sm">For appointment: {formatDateLong(nextAppt.date)}{nextAppt.time && ` at ${formatClock(nextAppt.time)}`}{nextAppt.clinician && ` with ${nextAppt.clinician}`}</p>}

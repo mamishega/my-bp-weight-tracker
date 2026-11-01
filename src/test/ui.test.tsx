@@ -26,9 +26,9 @@ describe('accessible forms and navigation', () => {
     expect(await screen.findByText(/your dashboard is empty/i)).toBeInTheDocument();
     const nav = screen.getByRole('navigation', { name: 'Main' });
     for (const label of ['Dashboard', 'Add Reading', 'Medication & Supply', 'Weight', 'Symptoms & Lifestyle', 'Trends & Weekly Review', 'History & Reports', 'Appointments', 'Settings & Backups']) {
-      expect(within(nav).getByRole('link', { name: new RegExp(label.replace(/[&]/g, '\\&')) })).toHaveAttribute('href');
+      expect(within(nav).getByRole('link', { name: label })).toHaveAttribute('href');
     }
-    expect(screen.getAllByText(/Not yet recorded today/).length).toBe(3);
+    expect(screen.getAllByText(/^Not yet$/).length).toBe(3);
     expect(screen.getByText(/No successful backup yet/)).toBeInTheDocument();
   });
 

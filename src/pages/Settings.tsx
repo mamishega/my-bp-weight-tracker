@@ -34,7 +34,7 @@ function TargetsCard() {
     toast('Personal targets saved.');
   };
   return (
-    <Card title="Personal blood pressure targets (from your clinician)">
+    <Card title="Personal blood pressure targets" subtitle="Only numbers your clinician has given you" icon="stethoscope">
       <p className="mb-3 text-sm text-slate-700">Targets differ from person to person. Only enter numbers your clinician has given you. The app doesn’t assume any target. Targets never change the urgent symptom guidance.</p>
       <div className="grid gap-3 sm:grid-cols-2">
         <TextField label="Target systolic (mmHg)" optional inputMode="numeric" value={f.systolic} onChange={(e) => setF({ ...f, systolic: e.target.value })} error={err.systolic} />
@@ -65,7 +65,7 @@ function MonitorsCard() {
     setEdit(null);
   };
   return (
-    <Card title="Measurement consistency">
+    <Card title="Measurement consistency" subtitle="Usual arm, monitors and cuffs" icon="activity" iconTone="blue">
       <div className="grid gap-3 sm:grid-cols-2">
         <SelectField label="Usual arm" value={st.defaultArm ?? ''} onChange={(e) => saveSettings({ ...st, defaultArm: (e.target.value || null) as Arm | null })}>
           <option value="">Not set</option><option value="left">Left</option><option value="right">Right</option>
@@ -122,7 +122,7 @@ function RemindersCard() {
   };
   const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   return (
-    <Card title="Reminders">
+    <Card title="Reminders" icon="bell" iconTone="orange">
       <Notice tone="warn" title="What reminders can and can’t do">
         <p>Reminders appear inside the app while it is open (including when installed). If browser notifications are on, the app can also show a system notification — but <strong>only while the app is open or running in the background in a tab</strong>. This web app has no server, so it cannot reliably remind you when it is closed, the phone is asleep, or the browser has stopped it. Use your phone’s alarm or calendar as a backup for important reminders.</p>
       </Notice>
@@ -197,9 +197,9 @@ function RestoreCard() {
   const totals = plan ? plan.stores.reduce((a, s) => ({ n: a.n + s.newRecords.length, i: a.i + s.identical, c: a.c + s.conflicts.length, d: a.d + s.possibleDuplicates.length }), { n: 0, i: 0, c: 0, d: 0 }) : null;
 
   return (
-    <Card title="Restore from backup">
-      <label className="font-medium" htmlFor="restore-file">Choose a JSON backup file</label>
-      <input key={fileKey} id="restore-file" type="file" accept="application/json,.json" className="mt-1 block min-h-11 w-full" onChange={(e) => onFile(e.target.files?.[0])} />
+    <Card title="Restore from backup" subtitle="Validated and previewed before anything changes" icon="upload" iconTone="slate">
+      <label className="text-sm font-semibold text-slate-800" htmlFor="restore-file">Choose a JSON backup file</label>
+      <input key={fileKey} id="restore-file" type="file" accept="application/json,.json" className="mt-1.5 block w-full rounded-lg border border-dashed border-slate-300 bg-slate-50 p-2 text-sm text-slate-600 file:mr-3 file:min-h-10 file:cursor-pointer file:rounded-lg file:border file:border-slate-300 file:bg-white file:px-4 file:text-sm file:font-semibold file:text-slate-800 hover:file:bg-slate-50" onChange={(e) => onFile(e.target.files?.[0])} />
       <p className="mt-1 text-sm text-slate-600">The file is checked and previewed first. Nothing changes until you confirm.</p>
       {errors.length > 0 && <div className="mt-3"><Notice tone="danger" role="alert" title="This backup can’t be restored"><ul className="list-disc pl-5">{errors.map((e, i) => <li key={i}>{e}</li>)}</ul></Notice></div>}
       {backup && plan && totals && (
@@ -207,9 +207,9 @@ function RestoreCard() {
           <Notice tone="info" title="Backup preview">
             <p>Created {formatDateShort(localDateOf(backup.exportedAt, data.settings.timeZone))} {formatTime(backup.exportedAt, data.settings.timeZone)} (time zone {backup.exportedTimeZone}), {plan.totalIncoming} records.</p>
           </Notice>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead><tr className="border-b"><th className="p-1">Type</th><th className="p-1">In backup</th><th className="p-1">New</th><th className="p-1">Already identical</th><th className="p-1">Same ID, different content</th><th className="p-1">Possible duplicates</th></tr></thead>
+          <div className="overflow-x-auto rounded-lg ring-1 ring-slate-200">
+            <table className="w-full text-left text-sm [&_td]:px-3 [&_td]:py-2.5 [&_th]:px-3 [&_th]:py-2.5">
+              <thead><tr className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-500"><th className="p-1">Type</th><th className="p-1">In backup</th><th className="p-1">New</th><th className="p-1">Already identical</th><th className="p-1">Same ID, different content</th><th className="p-1">Possible duplicates</th></tr></thead>
               <tbody>{plan.stores.filter((s) => s.incoming || data[s.name].length).map((s) => <tr key={s.name} className="border-b border-slate-100"><td className="p-1">{s.name}</td><td className="p-1">{s.incoming}</td><td className="p-1">{s.newRecords.length}</td><td className="p-1">{s.identical}</td><td className="p-1">{s.conflicts.length}</td><td className="p-1">{s.possibleDuplicates.length}</td></tr>)}</tbody>
             </table>
           </div>
@@ -255,7 +255,7 @@ function StorageCard() {
     toast('All data on this device has been deleted.', 'info');
   };
   return (
-    <Card title="Privacy and storage">
+    <Card title="Privacy and storage" icon="shield" iconTone="slate">
       <PrivacySummary />
       <div className="mt-3 flex flex-wrap items-center gap-2">
         {persisted ? <Badge tone="ok">Browser asked to keep storage</Badge> : <Badge tone="warn">Storage may be cleared by the browser</Badge>}
@@ -265,7 +265,7 @@ function StorageCard() {
       <h3 className="mt-4 font-semibold">Demo mode</h3>
       <p className="text-sm text-slate-700">Demo mode uses a separate, clearly labelled sample database. It can never mix with your personal records, and demo backups can’t be restored into personal records.</p>
       <div className="mt-2 flex flex-wrap gap-2">
-        {mode === 'real' ? <Button onClick={() => setMode('demo')}>🧪 Open demo mode</Button> : <><Button variant="primary" onClick={() => setMode('real')}>Return to my records</Button><Button onClick={async () => { await resetDemo(); toast('Sample data reset.', 'info'); }}>Reset sample data</Button></>}
+        {mode === 'real' ? <Button icon="flask" onClick={() => setMode('demo')}>Open demo mode</Button> : <><Button variant="primary" onClick={() => setMode('real')}>Return to my records</Button><Button onClick={async () => { await resetDemo(); toast('Sample data reset.', 'info'); }}>Reset sample data</Button></>}
       </div>
       <h3 className="mt-4 font-semibold text-red-900">Delete all data</h3>
       <p className="text-sm text-slate-700">Permanently deletes every {mode === 'demo' ? 'demo' : 'personal'} record and setting stored in this browser. Backup files you saved are not affected.</p>
@@ -283,7 +283,7 @@ function GeneralCard() {
   const st = data.settings;
   const zones = listTimeZones();
   return (
-    <Card title="General">
+    <Card title="General" icon="sliders" iconTone="slate">
       <div className="grid gap-3 sm:grid-cols-2">
         <SelectField label="Time zone for grouping and display" value={st.timeZone} onChange={(e) => isValidTimeZone(e.target.value) && saveSettings({ ...st, timeZone: e.target.value })} hint="Each record keeps the time zone it was recorded in, so changing this never alters saved times.">
           {(zones.includes(st.timeZone) ? zones : [st.timeZone, ...zones]).map((z) => <option key={z} value={z}>{z}</option>)}
@@ -300,7 +300,7 @@ export function SettingsPage() {
   return (
     <div className="flex flex-col gap-4">
       <PageTitle>Settings &amp; Backups</PageTitle>
-      <Card title="Backup">
+      <Card title="Backup" subtitle="One file with every record and setting" icon="database">
         <div className="flex flex-wrap items-center gap-3"><LastBackup /><BackupNowButton /></div>
         <p className="mt-2 text-sm text-slate-700">The backup is one JSON file with every record (with its ID, timestamps and time zone), your settings and full medication history. A backup only counts once the file is saved; cancelled or failed saves never update the date.</p>
         <Notice tone="warn">Backup files contain sensitive personal health information and are not encrypted. Keep them somewhere private.</Notice>
@@ -311,7 +311,7 @@ export function SettingsPage() {
       <MonitorsCard />
       <RemindersCard />
       <StorageCard />
-      <Card title="Install on your phone or computer">
+      <Card title="Install on your phone or computer" icon="smartphone" iconTone="slate">
         <ul className="list-disc space-y-1 pl-5 text-sm">
           <li><strong>iPhone / iPad (Safari):</strong> tap Share, then “Add to Home Screen”.</li>
           <li><strong>Android (Chrome):</strong> tap the ⋮ menu, then “Install app” or “Add to Home screen”.</li>
@@ -319,7 +319,7 @@ export function SettingsPage() {
           <li>After the app has loaded once, it opens and works offline. Records stay on that device only — an installed app and the browser may keep separate storage on some phones (notably iPhone), so back up before switching.</li>
         </ul>
       </Card>
-      <Card title="About and safety">
+      <Card title="About and safety" icon="heartPulse">
         <SafetyStatement />
         <div className="mt-3"><UrgentHelp /></div>
         <p className="mt-3 text-xs text-slate-500">Version {typeof __BUILD_ID__ !== 'undefined' ? __BUILD_ID__ : 'dev'}</p>

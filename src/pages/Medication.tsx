@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useStore } from '../store/Store';
 import { useDirtyForm } from '../store/dirty';
 import type { DoseRecord, DoseStatus, Medication, StockEvent } from '../types';
-import { Badge, Button, Card, Checkbox, Empty, Modal, Notice, PageTitle, TextArea, TextField, useToast, Optional } from '../components/ui';
+import { DoseMark, DoseLegend, Badge, Button, Card, Checkbox, Empty, Modal, Notice, PageTitle, TextArea, TextField, useToast, Optional } from '../components/ui';
 import { DoseForm } from '../components/DoseForm';
 import { dayDoseStatus, estimateSupply, updateMedication } from '../lib/medication';
 import { formatClock, formatDateShort, formatTime, isValidDate, isValidTime, localDateOf, nowTimeIn, todayIn, zonedToInstant, addDays, dateRange } from '../lib/time';
@@ -123,13 +123,13 @@ function SupplyPanel({ med }: { med: Medication }) {
   const events = data.stock.filter((e) => e.medicationId === med.id).sort((a, b) => b.at.localeCompare(a.at));
   if (!med.supply?.enabled) return null;
   return (
-    <div className="mt-3 rounded-lg border border-dashed border-slate-400 p-3">
-      <p className="font-semibold">Estimated supply <Badge tone="neutral" icon="≈">Estimate</Badge></p>
+    <div className="mt-4 rounded-xl bg-slate-50 p-4 ring-1 ring-slate-200">
+      <p className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-slate-500">Estimated supply <Badge tone="neutral" icon="info">Estimate only</Badge></p>
       {!est.known ? (
         <p className="text-slate-700">Enter a manual count to start the estimate.</p>
       ) : (
         <>
-          <p className="text-3xl font-bold tabular-nums">≈ {est.remaining} units</p>
+          <p className="mt-1 text-3xl font-bold tracking-tight tabular-nums text-slate-900">≈ {est.remaining} <span className="text-base font-medium text-slate-500">units</span></p>
           <p className="text-sm text-slate-700">
             {est.countedUnits} counted {formatDateShort(localDateOf(est.countedAt!, tz))} + {est.addedSince} added − {est.usedSince} used by {est.dosesCounted} dose{est.dosesCounted === 1 ? '' : 's'} recorded as taken since.
             {est.daysLeft != null && <> About {est.daysLeft} days at {med.supply.unitsPerDay} per day.</>}
@@ -139,9 +139,9 @@ function SupplyPanel({ med }: { med: Medication }) {
       )}
       {med.supply.renewalDate && <p className="mt-1 text-sm">Prescription renewal: {formatDateShort(med.supply.renewalDate)} {est.renewalSoon && <Badge tone="warn">Within 14 days</Badge>}</p>}
       <p className="mt-1 text-xs text-slate-600">Only doses you record as taken reduce the estimate. It is recalculated from your records each time, so editing or deleting a dose never counts twice. Always check your actual supply.</p>
-      <div className="mt-2 flex flex-wrap gap-2"><Button onClick={() => setOpen(true)}>Count / add refill</Button></div>
+      <div className="mt-3 flex flex-wrap gap-2"><Button icon="plus" className="min-h-10 text-sm" onClick={() => setOpen(true)}>Count / add refill</Button></div>
       {events.length > 0 && (
-        <details className="mt-2"><summary className="cursor-pointer text-sm font-medium">Supply entries ({events.length})</summary>
+        <details className="mt-3"><summary className="cursor-pointer text-sm font-medium text-teal-800">Supply entries ({events.length})</summary>
           <ul className="mt-1 space-y-1 text-sm">
             {events.map((e) => (
               <li key={e.id} className="flex flex-wrap items-center gap-2">
@@ -171,19 +171,18 @@ export function MedicationPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <PageTitle sub="Record each dose as you take it. The app never advises delaying, repeating, skipping, stopping or changing a dose.">Medication &amp; Supply</PageTitle>
-      <div><Button variant="primary" onClick={() => setEdit('new')}>➕ Add medication</Button></div>
+      <PageTitle sub="Record each dose as you take it. The app never advises delaying, repeating, skipping, stopping or changing a dose." actions={<Button variant="primary" icon="plus" onClick={() => setEdit('new')}>Add medication</Button>}>Medication &amp; Supply</PageTitle>
       {meds.length === 0 && <Empty>No medications yet. Add the morning medication(s) you have been prescribed.</Empty>}
       {meds.map((m) => {
         const st = dayDoseStatus(data.doses, m.id, today);
         return (
-          <Card key={m.id} title={<>{m.name} <span className="font-normal text-slate-700">{m.dose}</span> {!m.active && <Badge>Inactive</Badge>}</>} actions={<Button variant="ghost" onClick={() => setEdit(m)}>Edit</Button>}>
+          <Card key={m.id} icon="pill" title={<>{m.name} <span className="font-normal text-slate-700">{m.dose}</span> {!m.active && <Badge>Inactive</Badge>}</>} actions={<Button variant="ghost" icon="pencil" onClick={() => setEdit(m)}>Edit</Button>}>
             <p className="text-slate-700">Usual time: {formatClock(m.usualTime)} · After-medication reminder: {m.postDoseReminderMinutes == null ? 'not set' : `${m.postDoseReminderMinutes} min after recorded dose (from your clinician’s instructions)`}</p>
             {m.instructions && <p className="mt-1 text-sm text-slate-700">Instructions: {m.instructions}</p>}
             {m.active && (
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <span className="font-medium">Today:</span>
-                {st === 'not_recorded' ? <Badge icon="○">Not recorded</Badge> : st === 'taken' ? <Badge tone="ok">Taken</Badge> : <Badge tone="info" icon="⤼">Skipped</Badge>}
+                {st === 'not_recorded' ? <Badge>Not recorded</Badge> : st === 'taken' ? <Badge tone="ok">Taken</Badge> : <Badge tone="info" icon="skip">Skipped</Badge>}
                 <Button variant="primary" onClick={() => setDoseFor({ med: m, status: 'taken', date: today })}>Record taken</Button>
                 <Button onClick={() => setDoseFor({ med: m, status: 'skipped', date: today })}>Record skipped</Button>
               </div>
@@ -194,10 +193,10 @@ export function MedicationPage() {
                 <thead><tr>{days.map((d) => <th key={d} scope="col" className="px-1 font-normal text-slate-600">{d.slice(8)}</th>)}</tr></thead>
                 <tbody><tr>{days.map((d) => {
                   const s = dayDoseStatus(data.doses, m.id, d);
-                  return <td key={d} className="px-1" title={`${d}: ${s.replace('_', ' ')}`}><span aria-label={`${d}: ${s === 'not_recorded' ? 'not recorded' : s}`}>{s === 'taken' ? '✔' : s === 'skipped' ? '⤼' : '·'}</span></td>;
+                  return <td key={d} className="px-1 py-1"><DoseMark status={s} label={formatDateShort(d)} /></td>;
                 })}</tr></tbody>
               </table>
-              <p className="text-xs text-slate-600">✔ taken · ⤼ skipped · · not recorded</p>
+              <DoseLegend />
             </div>
             <SupplyPanel med={m} />
             {m.history.length > 1 && (
@@ -211,11 +210,11 @@ export function MedicationPage() {
         );
       })}
 
-      <Card title="Dose records">
+      <Card title="Dose records" subtitle="Most recent 60" icon="list" iconTone="slate">
         {recent.length === 0 ? <Empty>No doses recorded yet.</Empty> : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead><tr className="border-b"><th className="p-2">Date</th><th className="p-2">Medication</th><th className="p-2">Status</th><th className="p-2">Time taken</th><th className="p-2">Notes</th><th className="p-2"><span className="sr-only">Actions</span></th></tr></thead>
+          <div className="overflow-x-auto rounded-lg ring-1 ring-slate-200">
+            <table className="w-full text-left text-sm [&_td]:px-3 [&_td]:py-2.5 [&_th]:px-3 [&_th]:py-2.5">
+              <thead><tr className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-500"><th className="p-2">Date</th><th className="p-2">Medication</th><th className="p-2">Status</th><th className="p-2">Time taken</th><th className="p-2">Notes</th><th className="p-2"><span className="sr-only">Actions</span></th></tr></thead>
               <tbody>
                 {recent.map((d) => {
                   const med = data.medications.find((m) => m.id === d.medicationId);
@@ -223,7 +222,7 @@ export function MedicationPage() {
                     <tr key={d.id} className="border-b border-slate-100">
                       <td className="p-2">{formatDateShort(d.date)}</td>
                       <td className="p-2">{d.nameSnapshot} {d.doseSnapshot}</td>
-                      <td className="p-2">{d.status === 'taken' ? '✔ Taken' : '⤼ Skipped'} {dupes.has(d.id) && <Badge tone="warn">Possible duplicate</Badge>}</td>
+                      <td className="p-2">{d.status === 'taken' ? <Badge tone="ok">Taken</Badge> : <Badge tone="info" icon="skip">Skipped</Badge>} {dupes.has(d.id) && <Badge tone="warn">Possible duplicate</Badge>}</td>
                       <td className="p-2">{d.status !== 'taken' ? '—' : d.takenAt ? formatTime(d.takenAt, d.timeZone, tz) : <Badge tone="warn">Medication time unknown</Badge>}</td>
                       <td className="p-2">{d.notes}</td>
                       <td className="whitespace-nowrap p-2">

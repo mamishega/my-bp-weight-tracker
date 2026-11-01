@@ -174,10 +174,10 @@ function ReadingForm({ existing, initialType }: { existing?: BPSession; initialT
               options={(['morning_pre', 'morning_post', 'evening'] as SessionType[]).map((t) => ({ value: t, label: <><span aria-hidden="true" style={{ color: SESSION_STYLE[t].color }}>{SESSION_STYLE[t].symbol} </span>{SESSION_LABEL[t]}</> }))}
             />
           </div>
-          {submitted && !type && <p className="mt-2 text-sm font-medium text-red-800" role="alert">⛔ Choose a session type.</p>}
+          {submitted && !type && <p className="mt-2 text-sm font-medium text-red-700" role="alert">Choose a session type.</p>}
         </Card>
 
-        <Card title="Readings (mmHg)">
+        <Card title="Readings" subtitle="Enter exactly what your monitor shows (mmHg)" icon="activity">
           <div className="mb-3 grid gap-3 sm:grid-cols-2">
             <TextField label="Measurement date" type="date" value={mDate} onChange={(e) => onDate(e.target.value)} error={timeErrors.mDate} />
             <TextField label="Time of first reading" type="time" value={r[0].time} onChange={(e) => { setReading(0, 'time', e.target.value); if (r[1].time === plusMinute(r[0].time)) setReading(1, 'time', plusMinute(e.target.value)); }} error={timeErrors.t0} hint={`Time zone: ${tz}`} />
@@ -218,13 +218,13 @@ function ReadingForm({ existing, initialType }: { existing?: BPSession; initialT
               <div className="mt-2">
                 <Checkbox label="I’ve checked — these are the values my monitor showed" checked={confirmed} onChange={setConfirmed} />
               </div>
-              {submitted && !confirmed && <p className="mt-1 text-sm font-medium text-red-800" role="alert">⛔ Confirm the values, or correct them, to save.</p>}
+              {submitted && !confirmed && <p className="mt-1 text-sm font-medium text-red-700" role="alert">Confirm the values, or correct them, to save.</p>}
             </div>
           )}
         </Card>
 
         {type === 'morning_post' && (
-          <Card title="Linked medication dose">
+          <Card title="Linked medication dose" icon="pill" iconTone="orange">
             {candidateDoses.length === 0 ? (
               <Notice tone="warn" title="No dose recorded for this day">You can still save. Record the dose on the Medication page and link it later by editing this reading. <a href="#/medication">Record a dose</a></Notice>
             ) : (
@@ -237,7 +237,7 @@ function ReadingForm({ existing, initialType }: { existing?: BPSession; initialT
                       checked={linked.includes(d.id)}
                       onChange={(v) => { touch(); setLinkTouched(true); setLinked((l) => (v ? [...l, d.id] : l.filter((x) => x !== d.id))); }}
                       label={<>{d.nameSnapshot} {d.doseSnapshot} — {formatDateShort(d.date)}, {d.status === 'skipped' ? 'recorded as skipped' : d.takenAt ? `taken ${formatTime(d.takenAt, d.timeZone)}` : 'Medication time unknown'}</>}
-                      hint={t?.kind === 'ok' ? `Measured ${formatDuration(t.minutes)} after this dose.` : t?.kind === 'before_dose' ? `⚠️ Timing to review: this measurement is ${formatDuration(-t.minutes)} BEFORE the recorded dose time.` : t?.kind === 'unknown_time' ? 'Medication time unknown — elapsed time can’t be calculated.' : undefined}
+                      hint={t?.kind === 'ok' ? `Measured ${formatDuration(t.minutes)} after this dose.` : t?.kind === 'before_dose' ? `Timing to review: this measurement is ${formatDuration(-t.minutes)} BEFORE the recorded dose time.` : t?.kind === 'unknown_time' ? 'Medication time unknown — elapsed time can’t be calculated.' : undefined}
                     />
                   );
                 })}

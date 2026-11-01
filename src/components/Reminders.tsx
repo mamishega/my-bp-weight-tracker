@@ -3,6 +3,7 @@ import { useStore } from '../store/Store';
 import { dueReminders } from '../lib/reminders';
 import { useNow } from './Backup';
 import { Button } from './ui';
+import { Icon } from './Icon';
 import { showSystemNotification } from '../lib/pwa';
 
 /** In-app reminders. Snoozing or dismissing never marks the action as done. */
@@ -28,19 +29,19 @@ export function RemindersBar() {
   const dismiss = (key: string) => put('reminderStates', { id: key, status: 'dismissed', snoozeUntil: null, updatedAt: new Date().toISOString() });
 
   return (
-    <section aria-label="Reminders" className="border-b border-amber-300 bg-amber-50 px-3 py-2 print:hidden sm:px-6">
+    <section aria-label="Reminders" className="mx-auto max-w-6xl px-4 pt-4 print:hidden sm:px-8">
       <ul className="flex flex-col gap-2">
         {due.map((r) => (
-          <li key={r.key} className="flex flex-wrap items-center gap-2 rounded-lg bg-white/70 p-2">
-            <div className="min-w-0 flex-1 basis-56">
-              <span aria-hidden="true">🔔 </span>
-              <span className="font-semibold text-amber-950">{r.title}</span>
-              <p className="text-sm text-amber-950">{r.body}</p>
+          <li key={r.key} className="flex flex-wrap items-center gap-3 rounded-xl border border-amber-200 bg-amber-50/80 p-3">
+            <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-800" aria-hidden="true"><Icon name="bell" className="h-[18px] w-[18px]" /></span>
+            <div className="min-w-0 flex-1 basis-48">
+              <p className="font-semibold text-amber-950">{r.title}</p>
+              <p className="text-sm text-amber-900">{r.body}</p>
             </div>
             <div className="flex w-full flex-wrap gap-2 sm:w-auto">
-              <a href={r.href} className="inline-flex min-h-11 items-center rounded-lg border border-teal-700 bg-teal-700 px-3 font-medium text-white no-underline">Open</a>
-              <Button onClick={() => snooze(r.key)} aria-label={`Snooze ${r.title} for ${data.settings.reminders.snoozeMinutes} minutes`}>Snooze {data.settings.reminders.snoozeMinutes} min</Button>
-              <Button variant="ghost" onClick={() => dismiss(r.key)} aria-label={`Dismiss ${r.title} for now`}>Dismiss</Button>
+              <a href={r.href} className="inline-flex min-h-10 items-center rounded-lg border border-teal-700 bg-teal-700 px-3 text-sm font-semibold text-white no-underline hover:bg-teal-800">Open</a>
+              <Button className="min-h-10 text-sm" onClick={() => snooze(r.key)} aria-label={`Snooze ${r.title} for ${data.settings.reminders.snoozeMinutes} minutes`}>Snooze {data.settings.reminders.snoozeMinutes} min</Button>
+              <Button variant="ghost" className="min-h-10 text-sm" onClick={() => dismiss(r.key)} aria-label={`Dismiss ${r.title} for now`}>Dismiss</Button>
             </div>
           </li>
         ))}

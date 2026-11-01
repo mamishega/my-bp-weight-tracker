@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button } from './ui';
+import { Icon } from './Icon';
 
 /** Optional countdown timer. Never blocks entry or editing. */
 export function Timer({ seconds, label, doneText }: { seconds: number; label: string; doneText: string }) {
@@ -39,17 +40,18 @@ export function Timer({ seconds, label, doneText }: { seconds: number; label: st
   const mm = Math.floor(left / 60);
   const ss = String(left % 60).padStart(2, '0');
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-300 bg-white p-2">
-      <span className="font-medium">{label}</span>
-      <span className="min-w-14 text-2xl font-bold tabular-nums" aria-hidden="true">{mm}:{ss}</span>
+    <div className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+      <Icon name="timer" className="h-5 w-5 text-slate-400" />
+      <span className="text-sm font-semibold text-slate-700">{label}</span>
+      <span className="min-w-14 text-2xl font-bold tabular-nums tracking-tight text-slate-900" aria-hidden="true">{mm}:{ss}</span>
       <span className="sr-only">{running ? `${mm} minutes ${ss} seconds remaining` : ''}</span>
       {running ? (
-        <Button onClick={() => { setRunning(false); }}>Pause</Button>
+        <Button className="ml-auto min-h-10" onClick={() => { setRunning(false); }}>Pause</Button>
       ) : (
-        <Button onClick={start}>{left === seconds ? 'Start' : 'Resume'}</Button>
+        <Button className="ml-auto min-h-10" onClick={start}>{left === seconds ? 'Start' : 'Resume'}</Button>
       )}
-      <Button variant="ghost" onClick={reset}>Reset</Button>
-      <span role="status" className="w-full text-sm font-medium text-emerald-900">{done ? `✅ ${doneText}` : ''}</span>
+      <Button variant="ghost" className="min-h-10" onClick={reset}>Reset</Button>
+      <span role="status" className={done ? 'w-full text-sm font-medium text-emerald-800' : 'sr-only'}>{done ? doneText : ''}</span>
     </div>
   );
 }
