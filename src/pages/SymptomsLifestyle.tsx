@@ -3,6 +3,7 @@ import { useStore } from '../store/Store';
 import { useRoute, navigate } from '../store/router';
 import { useDirtyForm } from '../store/dirty';
 import type { DailyLog, Severity, SymptomEntry } from '../types';
+import { WALK_MAX, WALK_MIN, walkMinutes, walkMinutesFromName, walkName } from '../lib/habits';
 import { Badge, Button, Card, Checkbox, Empty, Modal, Optional, PageTitle, SelectField, TextArea, TextField, useToast, cx } from '../components/ui';
 import { UrgentHelp } from '../components/safety';
 import { addDays, dateRange, formatDateShort, formatTime, instantToZoned, isValidDate, isValidTime, nowTimeIn, todayIn, weekStart, zonedToInstant } from '../lib/time';
@@ -197,6 +198,52 @@ function LifestyleForm({ date, existing, onSave, onDelete }: { date: string; exi
   );
 }
 
+function WalkGoal() {
+  // Re-mount when the goal changes elsewhere (another synced device, a restore) so the field isn’t stale.
+  const { data } = useStore();
+  const walk = data.habits.find((h) => walkMinutes(h) != null);
+  return <WalkGoalForm key={`${walk?.id ?? 'none'}:${walk ? walkMinutes(walk) : ''}`} />;
+}
+
+function WalkGoalForm() {
+  const { data, put } = useStore();
+  const toast = useToast();
+  const walk = data.habits.find((h) => walkMinutes(h) != null);
+  const current = walk ? walkMinutes(walk)! : null;
+  const [value, setValue] = useState(String(current ?? 20));
+  const [err, setErr] = useState<string | null>(null);
+  const save = async (raw: string) => {
+    const m = Number(raw);
+    if (!/^\d+$/.test(raw.trim()) || m < WALK_MIN || m > WALK_MAX) return setErr(`Enter a whole number of minutes from ${WALK_MIN} to ${WALK_MAX}.`);
+    setErr(null);
+    setValue(String(m));
+    const now = new Date().toISOString();
+    if (walk) {
+      if (m === current) return;
+      await put('habits', { ...walk, name: walkName(m), minutes: m, updatedAt: now });
+      toast(`Walking goal changed to ${m} minutes.${walk.active ? '' : ' It’s still paused; choose Resume to show it again.'}`);
+    } else {
+      await put('habits', { id: uid(), name: walkName(m), minutes: m, active: true, createdAt: now, updatedAt: now });
+      toast(`Walking goal added: ${m} minutes.`);
+    }
+  };
+  return (
+    <div className="mt-4 rounded-lg bg-slate-50 p-3 ring-1 ring-slate-200">
+      <p className="font-semibold text-slate-800">How long do you want to walk?</p>
+      <p className="text-sm text-slate-600">{current ? `Your goal is a ${current}-minute walk. Change it any time — days you’ve already ticked are kept.` : 'Choose a length that feels manageable. You can change it later.'}</p>
+      <div className="mt-2 flex flex-wrap gap-2" role="group" aria-label="Walk length">
+        {[10, 15, 20, 30, 45, 60].map((m) => (
+          <Button key={m} variant={current === m ? 'primary' : 'secondary'} className="min-h-10 text-sm" aria-pressed={current === m} onClick={() => void save(String(m))}>{m} min</Button>
+        ))}
+      </div>
+      <form className="mt-2 flex flex-wrap items-end gap-2" onSubmit={(e) => { e.preventDefault(); void save(value); }}>
+        <div className="w-40"><TextField label="Other length (minutes)" inputMode="numeric" value={value} onChange={(e) => setValue(e.target.value)} error={err} /></div>
+        <Button type="submit">{walk ? 'Update walk' : 'Add walk'}</Button>
+      </form>
+    </div>
+  );
+}
+
 function HabitsTab() {
   const { data, put, remove } = useStore();
   const tz = data.settings.timeZone;
@@ -205,7 +252,8 @@ function HabitsTab() {
   const [err, setErr] = useState<string | null>(null);
   const week = dateRange(weekStart(today), addDays(weekStart(today), 6));
   const add = async (n: string) => {
-    if (!n.trim()) return setErr('Enter a habit, e.g. “Walk for 20 minutes”.');
+    if (!n.trim()) return setErr('Enter a habit, e.g. “Prepare a meal at home”.');
+    if (walkMinutesFromName(n) != null && data.habits.some((h) => walkMinutes(h) != null)) return setErr('You already have a walking goal. Change its length under “How long do you want to walk?”.');
     const now = new Date().toISOString();
     await put('habits', { id: uid(), name: n.trim(), active: true, createdAt: now, updatedAt: now });
     setName('');
@@ -216,7 +264,7 @@ function HabitsTab() {
     if (done) await put('habitChecks', { id, habitId, date, createdAt: new Date().toISOString() });
     else await remove('habitChecks', id);
   };
-  const suggestions = ['Walk for 20 minutes', 'Prepare a meal at home', 'Choose a lower-salt option', 'Wind down for bed on time', 'Have an alcohol-free day'];
+  const suggestions = ['Prepare a meal at home', 'Choose a lower-salt option', 'Wind down for bed on time', 'Have an alcohol-free day'];
   return (
     <div className="flex flex-col gap-4">
       <Card title="Choose habit goals" icon="award" iconTone="green">
@@ -227,6 +275,7 @@ function HabitsTab() {
         <div className="mt-2 flex flex-wrap gap-2">
           {suggestions.filter((s) => !data.habits.some((h) => h.name === s)).map((s) => <Button key={s} variant="ghost" onClick={() => add(s)}>+ {s}</Button>)}
         </div>
+        <WalkGoal />
         <p className="mt-2 text-sm text-slate-600">Habits celebrate actions you complete — not blood pressure numbers or weight.</p>
       </Card>
       <Card title="This week" icon="calendar" iconTone="slate">

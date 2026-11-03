@@ -189,6 +189,8 @@ export interface Habit {
   id: ID;
   name: string;
   active: boolean;
+  /** For a walking goal: how long each walk should be, in minutes. */
+  minutes?: number | null;
   createdAt: ISOInstant;
   updatedAt: ISOInstant;
 }

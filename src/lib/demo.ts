@@ -32,7 +32,7 @@ export function buildDemoData(timeZone: string, now = new Date()): AppData {
   const start = addDays(today, -59);
   d.stock = [{ id: 'demo-stock', medicationId: med.id, at: zonedToInstant(start, '06:00', timeZone).iso, kind: 'count', units: 90, note: 'SAMPLE count', createdAt: ts }];
   d.habits = [
-    { id: 'h-walk', name: 'Walk for 20 minutes', active: true, createdAt: ts, updatedAt: ts },
+    { id: 'h-walk', name: 'Walk for 20 minutes', minutes: 20, active: true, createdAt: ts, updatedAt: ts },
     { id: 'h-cook', name: 'Prepare a meal at home', active: true, createdAt: ts, updatedAt: ts },
   ];
   for (let i = 0; i < 60; i++) {
